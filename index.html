@@ -100,21 +100,37 @@ function loadPolygons() {
         skipEmptyLines: true,
         complete: (result) => {
           const rows = result.data;
+
           rows.forEach(r => {
             if (!r.geom) return;
+
+            // Убираем deleted_at != null
+            if (r.deleted_at && r.deleted_at.trim() !== "") return;
 
             const geom = r.geom.trim();
 
             // Поддерживаем POLYGON
             if (geom.startsWith("POLYGON")) {
               const coords = parseWKTPolygon(geom);
+
               if (coords.length) {
-                L.polygon(coords, {
-                  color: 'red',
+                const polygon = L.polygon(coords, {
+                  color: 'blue',
                   weight: 2,
-                  fillColor: 'orange',
-                  fillOpacity: 0.3
+                  fillColor: 'blue',
+                  fillOpacity: 0.2
                 }).addTo(polygonsLayer);
+
+                // ===== Имя полигона =====
+                if (r.name) polygon.bindTooltip(r.name);
+
+                // ===== Подсветка =====
+                polygon.on("mouseover", function () {
+                  this.setStyle({ weight: 4, fillOpacity: 0.35 });
+                });
+                polygon.on("mouseout", function () {
+                  this.setStyle({ weight: 2, fillOpacity: 0.2 });
+                });
               }
             }
           });
