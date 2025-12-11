@@ -2,144 +2,178 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Мобильный навигатор (без симуляции)</title>
+<title>Карта + GPS + Полигоны</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <style>
-  html,body { margin:0; padding:0; height:100%; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; }
-  #map { height:100vh; width:100vw; }
-  #top-panel {
+  html, body { margin: 0; padding: 0; height: 100%; }
+  #map { height: 100vh; width: 100vw; }
+  #gpsBtn {
     position: absolute;
-    z-index: 1200;
+    top: 10px;
     left: 50%;
     transform: translateX(-50%);
-    top: 10px;
-    background: #fff;
-    padding: 8px;
-    border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-    max-width: calc(100% - 20px);
-  }
-  #top-panel button {
-    font-size:15px;
-    padding:8px 10px;
-    border-radius:8px;
-    border:1px solid #ccc;
-    background:#f7f7f7;
-  }
-  #info-box {
-    position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
-    z-index:1000; background:rgba(255,255,255,0.95);
-    padding:10px 15px; border-radius:8px;
-    box-shadow:0 2px 5px rgba(0,0,0,0.3);
-    min-width:180px; text-align:center; font-size:16px;
+    z-index: 1000;
+    padding: 10px 15px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 15px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
 </style>
 </head>
+
 <body>
 
-<div id="top-panel">
-  <button id="locBtn" type="button">Определить GPS</button>
-  <button id="clearBtn" type="button">Очистить</button>
-</div>
-
-<div id="info-box">
-  <b>Маршрут</b><br>
-  <span id="info-distance">Длина: —</span><br>
-  <span id="info-duration">Время: —</span>
-</div>
-
+<button id="gpsBtn">GPS</button>
 <div id="map"></div>
 
 <script>
-/* ==== Настройки карты ==== */
-const defaultCenter = [51.16, 71.47];
-const defaultZoom = 12;
-const map = L.map('map', { zoomControl: false }).setView(defaultCenter, defaultZoom);
+// === Инициализация карты ===
+const defaultCenter = [-8.05, -34.9];  // Recife
+const map = L.map('map').setView(defaultCenter, 13);
+
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-/* ==== Слои ==== */
-let csvMarkersLayer = L.layerGroup().addTo(map);  // теперь пустой, но оставлен, чтобы ничего не ломать
-let routeLayer = L.layerGroup().addTo(map);
-let followLineLayer = L.layerGroup().addTo(map);
+// ====== Слой для полигонов ======
+const polygonsLayer = L.layerGroup().addTo(map);
 
-/* ==== Переменные ==== */
-let userCoords = null;
+// ====== GPS ======
 let userMarker = null;
 let watchId = null;
 
-let routePointsArray = []; // остаётся, чтобы код ниже не ломался
-
-const infoDistanceEl = document.getElementById('info-distance');
-const infoDurationEl = document.getElementById('info-duration');
-
-/* ==== Центрирование ==== */
-function centerOnUser(zoom = 15) {
-  if (userCoords) map.setView(userCoords, zoom);
-}
-
-/* ==== Обновление позиции пользователя ==== */
 function updateUserPosition(position) {
-  userCoords = [position.coords.latitude, position.coords.longitude];
+  const lat = position.coords.latitude;
+  const lon = position.coords.longitude;
+  const coords = [lat, lon];
 
   if (!userMarker) {
-    userMarker = L.marker(userCoords).addTo(map).bindPopup('Вы здесь');
+    userMarker = L.marker(coords).addTo(map).bindPopup("Вы здесь");
+    userMarker.openPopup();
   } else {
-    userMarker.setLatLng(userCoords);
+    userMarker.setLatLng(coords);
   }
 
-  userMarker.openPopup();
-  centerOnUser(15);
-
-  // если бы был маршрут — обновили бы followLine
+  map.setView(coords, 17);
 }
 
-/* ==== Запрос геолокации ==== */
-function requestUserLocation() {
+document.getElementById("gpsBtn").addEventListener("click", () => {
   if (!navigator.geolocation) {
-    alert('Геолокация не поддерживается этим устройством.');
+    alert("Геолокация не поддерживается.");
     return;
   }
 
   navigator.geolocation.getCurrentPosition(
-    (position) => {
-      updateUserPosition(position);
+    (pos) => {
+      updateUserPosition(pos);
 
       if (watchId === null) {
         watchId = navigator.geolocation.watchPosition(
           updateUserPosition,
-          (err) => { console.warn('watchPosition error', err); },
+          (err) => console.warn("watchPosition error", err),
           { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
         );
       }
     },
-    (error) => {
-      console.error('Ошибка геолокации:', error);
-      alert('Не удалось получить геопозицию. Разрешите доступ к GPS.');
+    (err) => {
+      alert("Разрешите доступ к геолокации.");
     },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    { enableHighAccuracy: true }
   );
+});
+
+// ====== Загрузка CSV с полигонами ======
+function loadPolygons() {
+  const url = "poly.csv"; // лежит в корне GitHub Pages
+
+  fetch(url)
+    .then(res => res.text())
+    .then(csvText => {
+      Papa.parse(csvText, {
+        header: true,
+        dynamicTyping: false,
+        skipEmptyLines: true,
+        complete: (result) => {
+          const rows = result.data;
+
+          rows.forEach(r => {
+            if (!r.geom) return;
+
+            // Убираем deleted_at != null
+            if (r.deleted_at && r.deleted_at.trim() !== "") return;
+
+            const geom = r.geom.trim();
+
+            // Поддерживаем POLYGON
+            if (geom.startsWith("POLYGON")) {
+              const coords = parseWKTPolygon(geom);
+
+              if (coords.length) {
+                const polygon = L.polygon(coords, {
+                  color: 'blue',
+                  weight: 2,
+                  fillColor: 'blue',
+                  fillOpacity: 0.2
+                }).addTo(polygonsLayer);
+
+                // ===== Имя полигона =====
+                if (r.name) polygon.bindTooltip(r.name);
+
+                // ===== Подсветка =====
+                polygon.on("mouseover", function () {
+                  this.setStyle({ weight: 4, fillOpacity: 0.35 });
+                });
+                polygon.on("mouseout", function () {
+                  this.setStyle({ weight: 2, fillOpacity: 0.2 });
+                });
+              }
+            }
+          });
+
+          // Автоцентрирование по полигонам
+          if (polygonsLayer.getLayers().length > 0) {
+            map.fitBounds(polygonsLayer.getBounds());
+          }
+        }
+      });
+    })
+    .catch(err => console.error("Ошибка загрузки poly.csv:", err));
 }
 
-/* ==== Кнопки ==== */
-document.getElementById('locBtn').addEventListener('click', requestUserLocation);
+// ====== Парсер WKT POLYGON ======
+function parseWKTPolygon(wkt) {
+  // Пример: POLYGON ((-34.9 -8.05, -34.91 -8.06, ...))
+  const cleaned = wkt
+    .replace("POLYGON", "")
+    .replace(/\(/g, "")
+    .replace(/\)/g, "")
+    .trim();
 
-document.getElementById('clearBtn').addEventListener('click', function () {
-  csvMarkersLayer.clearLayers();  // пусть остаётся
-  routeLayer.clearLayers();
-  followLineLayer.clearLayers();
-  routePointsArray = [];
-  infoDistanceEl.textContent = 'Длина: —';
-  infoDurationEl.textContent = 'Время: —';
-});
+  const pairs = cleaned.split(",");
+  const latlngs = [];
+
+  pairs.forEach(pair => {
+    const parts = pair.trim().split(" ");
+    if (parts.length >= 2) {
+      const lon = parseFloat(parts[0]);
+      const lat = parseFloat(parts[1]);
+      if (!isNaN(lat) && !isNaN(lon)) {
+        latlngs.push([lat, lon]);
+      }
+    }
+  });
+
+  return latlngs;
+}
+
+// ====== Старт загрузки по умолчанию ======
+loadPolygons();
+
 </script>
 
 </body>
