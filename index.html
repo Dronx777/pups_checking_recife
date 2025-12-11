@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Карта + GPS + Полигоны</title>
+<title>Карта + GPS + Полигоны + Точки</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -26,7 +26,6 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
 
-  /* Всплывающее уведомление */
   #copyToast {
     position: fixed;
     bottom: 25px;
@@ -56,8 +55,9 @@ const map = L.map('map').setView(defaultCenter, 13);
 
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ====== Слой для полигонов ======
+// ====== Слои ======
 const polygonsLayer = L.layerGroup().addTo(map);
+const pointsLayer = L.layerGroup().addTo(map);
 
 // ====== GPS ======
 let userMarker = null;
@@ -110,7 +110,7 @@ function showCopiedToast() {
 
 // ====== Загрузка CSV с полигонами ======
 function loadPolygons() {
-  const url = "poly.csv"; // лежит в корне GitHub Pages
+  const url = "poly.csv";
 
   fetch(url)
     .then(res => res.text())
@@ -124,8 +124,6 @@ function loadPolygons() {
 
           rows.forEach(r => {
             if (!r.geom) return;
-
-            // Убираем deleted_at != null
             if (r.deleted_at && r.deleted_at.trim() !== "") return;
 
             const geom = r.geom.trim();
@@ -141,10 +139,8 @@ function loadPolygons() {
                   fillOpacity: 0.2
                 }).addTo(polygonsLayer);
 
-                // ===== Подпись при наведении =====
                 if (r.name) polygon.bindTooltip(r.name);
 
-                // ===== Подсветка =====
                 polygon.on("mouseover", function () {
                   this.setStyle({ weight: 4, fillOpacity: 0.35 });
                 });
@@ -152,7 +148,6 @@ function loadPolygons() {
                   this.setStyle({ weight: 2, fillOpacity: 0.2 });
                 });
 
-                // ===== Popup по клику =====
                 polygon.on("click", () => {
                   const popupContent = `
                     <div style="font-size:15px;min-width:180px;">
@@ -180,14 +175,6 @@ function loadPolygons() {
     .catch(err => console.error("Ошибка загрузки poly.csv:", err));
 }
 
-// ====== Функция копирования ======
-window.copyPolygonName = function () {
-  const input = document.getElementById("polyNameField");
-  if (!input) return;
-  navigator.clipboard.writeText(input.value);
-  showCopiedToast();
-};
-
 // ====== Парсер WKT POLYGON ======
 function parseWKTPolygon(wkt) {
   const cleaned = wkt
@@ -213,8 +200,62 @@ function parseWKTPolygon(wkt) {
   return latlngs;
 }
 
-// ====== Старт загрузки ======
+// ====== Копирование ======
+window.copyPolygonName = function () {
+  const input = document.getElementById("polyNameField");
+  if (!input) return;
+  navigator.clipboard.writeText(input.value);
+  showCopiedToast();
+};
+
+// ====== Загрузка точек pups_m.csv ======
+function loadPoints() {
+  const url = "pups_m.csv";
+
+  fetch(url)
+    .then(res => res.text())
+    .then(csvText => {
+      Papa.parse(csvText, {
+        header: true,
+        dynamicTyping: false,
+        skipEmptyLines: true,
+        complete: (result) => {
+          const rows = result.data;
+
+          rows.forEach(r => {
+            if (!r.lat || !r.lon) return;
+
+            const lat = parseFloat(r.lat);
+            const lon = parseFloat(r.lon);
+            if (isNaN(lat) || isNaN(lon)) return;
+
+            const marker = L.circleMarker([lat, lon], {
+              radius: 6,
+              color: "red",
+              fillColor: "red",
+              fillOpacity: 0.9
+            }).addTo(pointsLayer);
+
+            let title = r.name || r.subname || "Точка";
+            marker.bindTooltip(title);
+
+            marker.bindPopup(`
+              <div style="font-size:14px">
+                <b>${title}</b><br>
+                lat: ${lat}<br>
+                lon: ${lon}
+              </div>
+            `);
+          });
+        }
+      });
+    })
+    .catch(err => console.error("Ошибка загрузки pups_m.csv:", err));
+}
+
+// ====== Старт ======
 loadPolygons();
+loadPoints();
 
 </script>
 
