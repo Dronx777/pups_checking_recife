@@ -117,15 +117,6 @@ function parseWKTPolygon(wkt) {
   });
 }
 
-// ------------------ Парсер POINT ------------------
-function parseWKTPoint(wkt) {
-  // формат: POINT(-34.12345 -8.12345)
-  const cleaned = wkt.replace("POINT", "").replace("(", "").replace(")", "").trim();
-  const [lon, lat] = cleaned.split(" ").map(Number);
-  if (!isNaN(lat) && !isNaN(lon)) return [lat, lon];
-  return null;
-}
-
 // ------------------ Загрузка полигонов ------------------
 function loadPolygons() {
   fetch("poly.csv")
@@ -187,7 +178,7 @@ window.copyPolygonName = function () {
   showCopiedToast();
 };
 
-// ------------------ Загрузка точек pups_m.csv ------------------
+// ------------------ Загрузка точек pups_m.csv (lat, lon) ------------------
 function loadPoints() {
   fetch("pups_m.csv")
     .then(r => r.text())
@@ -196,26 +187,24 @@ function loadPoints() {
       skipEmptyLines: true,
       complete: res => {
         res.data.forEach(row => {
-          if (!row.geom) return;
+
           if (row.deleted_at && row.deleted_at.trim() !== "") return;
 
-          if (row.geom.startsWith("POINT")) {
-            const coords = parseWKTPoint(row.geom);
-            if (!coords) return;
+          // координаты из полей lat / lon
+          const lat = parseFloat(row.lat);
+          const lon = parseFloat(row.lon);
 
-            const marker = L.marker(coords, {
-              icon: L.icon({
-                iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
-                iconSize: [25, 41],
-                iconAnchor: [12, 41]
-              })
-            }).addTo(pointsLayer);
+          if (isNaN(lat) || isNaN(lon)) return;
 
-            const name = row.name || "";
-            const sub = row.subname || "";
+          const marker = L.marker([lat, lon], {
+            icon: L.icon({
+              iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+              iconSize: [25, 41],
+              iconAnchor: [12, 41]
+            })
+          }).addTo(pointsLayer);
 
-            marker.bindTooltip(`<b>${name}</b><br>${sub}`);
-          }
+          marker.bindTooltip(`<b>${row.name || ""}</b><br>${row.subname || ""}`);
         });
       }
     }));
