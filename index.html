@@ -2,127 +2,145 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Map Loader</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Мобильный навигатор (без симуляции)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-  #map { width: 100vw; height: 100vh; }
-  button.copy-btn {
-    background: #007bff; color: #fff; border: none;
-    padding: 6px 10px; border-radius: 4px; cursor: pointer;
+  html,body { margin:0; padding:0; height:100%; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; }
+  #map { height:100vh; width:100vw; }
+  #top-panel {
+    position: absolute;
+    z-index: 1200;
+    left: 50%;
+    transform: translateX(-50%);
+    top: 10px;
+    background: #fff;
+    padding: 8px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    max-width: calc(100% - 20px);
+  }
+  #top-panel button {
+    font-size:15px;
+    padding:8px 10px;
+    border-radius:8px;
+    border:1px solid #ccc;
+    background:#f7f7f7;
+  }
+  #info-box {
+    position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+    z-index:1000; background:rgba(255,255,255,0.95);
+    padding:10px 15px; border-radius:8px;
+    box-shadow:0 2px 5px rgba(0,0,0,0.3);
+    min-width:180px; text-align:center; font-size:16px;
   }
 </style>
 </head>
 <body>
 
+<div id="top-panel">
+  <button id="locBtn" type="button">Определить GPS</button>
+  <button id="clearBtn" type="button">Очистить</button>
+</div>
+
+<div id="info-box">
+  <b>Маршрут</b><br>
+  <span id="info-distance">Длина: —</span><br>
+  <span id="info-duration">Время: —</span>
+</div>
+
 <div id="map"></div>
 
 <script>
-// ============================
-//   БАЗОВАЯ КАРТА
-// ============================
-const map = L.map('map').setView([-8.05, -34.9], 13);
+/* ==== Настройки карты ==== */
+const defaultCenter = [51.16, 71.47];
+const defaultZoom = 12;
+const map = L.map('map', { zoomControl: false }).setView(defaultCenter, defaultZoom);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19
-}).addTo(map);
+/* ==== Слои ==== */
+let csvMarkersLayer = L.layerGroup().addTo(map);  // теперь пустой, но оставлен, чтобы ничего не ломать
+let routeLayer = L.layerGroup().addTo(map);
+let followLineLayer = L.layerGroup().addTo(map);
 
+/* ==== Переменные ==== */
+let userCoords = null;
+let userMarker = null;
+let watchId = null;
 
-// ============================
-//   ФУНКЦИЯ ПАРСИНГА POINT()
-// ============================
-function parsePointWKT(wkt) {
-  const match = wkt.match(/POINT\s*\(\s*(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s*\)/);
-  if (!match) return null;
-  return [parseFloat(match[2]), parseFloat(match[1])]; // [lat, lon]
+let routePointsArray = []; // остаётся, чтобы код ниже не ломался
+
+const infoDistanceEl = document.getElementById('info-distance');
+const infoDurationEl = document.getElementById('info-duration');
+
+/* ==== Центрирование ==== */
+function centerOnUser(zoom = 15) {
+  if (userCoords) map.setView(userCoords, zoom);
 }
 
+/* ==== Обновление позиции пользователя ==== */
+function updateUserPosition(position) {
+  userCoords = [position.coords.latitude, position.coords.longitude];
 
-// ============================
-//   ЗАГРУЗКА ПОЛИГОНОВ
-// ============================
-fetch("https://dronx777.github.io/pups_checking_recife/poly.csv")
-  .then(res => res.text())
-  .then(text => {
-    const rows = text.split("\n").map(r => r.split(","));
+  if (!userMarker) {
+    userMarker = L.marker(userCoords).addTo(map).bindPopup('Вы здесь');
+  } else {
+    userMarker.setLatLng(userCoords);
+  }
 
-    const header = rows[0];
-    const idxGeom = header.indexOf("geom");
-    const idxName = header.indexOf("name");
-    const idxDeleted = header.indexOf("deleted_at");
+  userMarker.openPopup();
+  centerOnUser(15);
 
-    for (let i = 1; i < rows.length; i++) {
-      const geom = rows[i][idxGeom];
-      const name = rows[i][idxName];
-      const deleted = rows[i][idxDeleted];
+  // если бы был маршрут — обновили бы followLine
+}
 
-      if (!geom || geom.indexOf("POLYGON") === -1) continue;
-      if (deleted && deleted.trim() !== "") continue; // ❗ скрыть удалённые
+/* ==== Запрос геолокации ==== */
+function requestUserLocation() {
+  if (!navigator.geolocation) {
+    alert('Геолокация не поддерживается этим устройством.');
+    return;
+  }
 
-      // Парсинг полигона
-      const coords = geom
-        .replace("POLYGON((", "")
-        .replace("))", "")
-        .split(",")
-        .map(p => {
-          const [x, y] = p.trim().split(" ");
-          return [parseFloat(y), parseFloat(x)];
-        });
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      updateUserPosition(position);
 
-      const polygon = L.polygon(coords, {
-        color: "blue",
-        weight: 2,
-        fillOpacity: 0.2
-      }).addTo(map);
+      if (watchId === null) {
+        watchId = navigator.geolocation.watchPosition(
+          updateUserPosition,
+          (err) => { console.warn('watchPosition error', err); },
+          { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+        );
+      }
+    },
+    (error) => {
+      console.error('Ошибка геолокации:', error);
+      alert('Не удалось получить геопозицию. Разрешите доступ к GPS.');
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
 
-      // Подпись
-      polygon.bindTooltip(name, { permanent: true, direction: "center" });
+/* ==== Кнопки ==== */
+document.getElementById('locBtn').addEventListener('click', requestUserLocation);
 
-      // Подсветка
-      polygon.on("mouseover", () => polygon.setStyle({ weight: 4 }));
-      polygon.on("mouseout", () => polygon.setStyle({ weight: 2 }));
-
-      // Popup с кнопкой копирования
-      polygon.bindPopup(`
-        <b>${name}</b><br><br>
-        <button class="copy-btn" onclick="navigator.clipboard.writeText('${name}')">
-            Скопировать
-        </button>
-      `);
-    }
-  });
-
-
-// ============================
-//   ЗАГРУЗКА ТОЧЕК
-// ============================
-fetch("https://dronx777.github.io/pups_checking_recife/pups_m.csv")
-  .then(res => res.text())
-  .then(text => {
-    const rows = text.split("\n").map(r => r.split(","));
-
-    const header = rows[0];
-    const idxGeom = header.indexOf("geom");
-
-    for (let i = 1; i < rows.length; i++) {
-      const geom = rows[i][idxGeom];
-      if (!geom || !geom.includes("POINT")) continue;
-
-      const latlon = parsePointWKT(geom);
-      if (!latlon) continue;
-
-      L.circleMarker(latlon, {
-        radius: 5,
-        color: "red",
-        fillColor: "red",
-        fillOpacity: 1
-      }).addTo(map);
-    }
-  });
-
+document.getElementById('clearBtn').addEventListener('click', function () {
+  csvMarkersLayer.clearLayers();  // пусть остаётся
+  routeLayer.clearLayers();
+  followLineLayer.clearLayers();
+  routePointsArray = [];
+  infoDistanceEl.textContent = 'Длина: —';
+  infoDurationEl.textContent = 'Время: —';
+});
 </script>
+
 </body>
 </html>
