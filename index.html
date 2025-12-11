@@ -2,501 +2,354 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Мобильный навигатор с OSRM Trip</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<title>Карта + GPS + Полигоны + Pup Points</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
 <style>
-html,body{margin:0;padding:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;}
-#map{height:100vh;width:100vw;}
-#file-input{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:10px;background:#fff;padding:6px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:95%;}
-#file-input input[type=file]{font-size:13px;}
-#file-input button{font-size:14px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer;}
-#info-box{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:1000;background:rgba(255,255,255,0.95);padding:6px 10px;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.3);min-width:150px;text-align:center;font-size:14px;}
-.leaflet-bottom .leaflet-control-zoom{top:50%;bottom:auto;transform:translateY(-50%);}
-#centerUserBtn{position:absolute;bottom:80px;right:10px;z-index:1200;background:#fff;border:none;border-radius:50%;width:45px;height:45px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;justify-content:center;align-items:center;transition:transform 0.15s ease;}
-#centerUserBtn:hover{transform:scale(1.1);}
-#centerUserBtn svg{width:24px;height:24px;stroke:#0077cc;stroke-width:2;fill:none;}
-#version-label{position:absolute;bottom:10px;left:10px;color:#000;font-size:12px;z-index:1200;text-shadow:0 0 3px rgba(0,0,0,0.7);}
-textarea{resize:none;font-size:13px;}
-button{font-size:14px;padding:4px 6px;}
-.waypoint-label div {
-  color: white;
-  font-weight: bold;
-  font-size: 14px;
-  line-height: 1;
-  text-shadow:
-    -1px -1px 0 #000,
-    1px -1px 0 #000,
-    -1px 1px 0 #000,
-    1px 1px 0 #000;
-}
-.popup-readonly { width:100%; margin-bottom:6px; background:#eee; border:1px solid #ddd; padding:6px; box-sizing:border-box; }
-.popup-input { width:100%; margin-bottom:6px; padding:6px; box-sizing:border-box; }
-.popup-btn { width:100%; padding:8px; margin-bottom:6px; cursor:pointer; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  #map { height: 100vh; width: 100vw; }
+
+  #gpsBtn {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    padding: 10px 15px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 15px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+
+  #centerBtn {
+    position: absolute;
+    right: 15px;
+    top: 80px;
+    width: 50px;
+    height: 50px;
+    z-index: 1000;
+    border-radius: 50%;
+    background: white;
+    border: 1px solid #ccc;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #centerBtn::before {
+    content: "";
+    width: 22px;
+    height: 22px;
+    border: 2px solid black;
+    border-radius: 50%;
+  }
+  #centerBtn::after {
+    content: "";
+    width: 3px;
+    height: 3px;
+    background: black;
+    border-radius: 50%;
+    position: absolute;
+  }
+
+  .sub-label {
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+    text-shadow:
+      -1px -1px 0 black,
+       1px -1px 0 black,
+      -1px  1px 0 black,
+       1px  1px 0 black;
+    white-space: nowrap;
+    transform: translate(-50%, -10px);
+  }
+
+  #layersPanel {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    padding: 10px 15px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    z-index: 1200;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    font-size: 15px;
+  }
+  #layersPanel label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    cursor: pointer;
+  }
+
+  .popup-input { width: 100%; margin-bottom: 6px; padding: 6px; box-sizing: border-box; }
+  .popup-readonly { width: 100%; margin-bottom: 6px; padding: 6px; box-sizing: border-box; background: #eee; }
+  .popup-btn { width: 100%; padding: 6px; margin-bottom: 4px; cursor: pointer; }
 </style>
 </head>
+
 <body>
 
-<div id="file-input">
-  <input type="file" id="csvFile" accept=".csv" />
-  <button id="locBtn">GPS</button>
-  <button id="refreshBtn">Обновить</button>
-  <button id="clearBtn">Очистить</button>
-  <button id="downloadBtn">Сохранить</button>
-  <button id="navStartBtn">Старт</button>
-  <button id="navStopBtn">Стоп</button>
+<div id="layersPanel">
+  <label><input type="checkbox" id="chkPoly" checked> Полигоны</label>
+  <label><input type="checkbox" id="chkPups" checked> Pup Points</label>
 </div>
 
-<div id="info-box">
-  <b>Маршрут</b><br>
-  <span id="info-distance">Длина: —</span><br>
-  <span id="info-duration">Время: —</span>
-</div>
-
+<button id="gpsBtn">GPS</button>
+<button id="centerBtn" style="display:none;"></button>
 <div id="map"></div>
 
-<button id="centerUserBtn">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-<circle cx="12" cy="12" r="10"/>
-<line x1="12" y1="2" x2="12" y2="6"/>
-<line x1="12" y1="18" x2="12" y2="22"/>
-<line x1="2" y1="12" x2="6" y2="12"/>
-<line x1="18" y1="12" x2="22" y2="12"/>
-</svg>
-</button>
-
-<div id="version-label">версия 3.2</div>
-
 <script>
-const map = L.map('map', {zoomControl:false}).setView([51.16,71.47],12);
+// ======================= КАРТА ============================
+const map = L.map('map').setView([-8.05, -34.9], 13);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-L.control.zoom({position:'bottomleft'}).addTo(map);
 
-let csvMarkersLayer = L.layerGroup().addTo(map);
-let routeLayer = L.layerGroup().addTo(map);
-let labelLayer = L.layerGroup().addTo(map);
+const polygonsLayer = L.layerGroup().addTo(map);
+const pointsLayer = L.layerGroup().addTo(map);
+
+// GPS
 let userMarker = null;
-let autoFollow = true;
-let csvData = [];
-let csvFileName = '';
-let userCoords = null;
-let activeRouteCoords = [];
-let osrmCoords = [];
-let userRadius = null;
+let watchId = null;
+let followEnabled = false;
 
-let navRouteCoords = [];
-let navWatchId = null;
-let remainingRouteLayer = null;
-let userHeading = 0;
+function updateUserPosition(position) {
+  const lat = position.coords.latitude;
+  const lon = position.coords.longitude;
 
-const infoDistanceEl = document.getElementById('info-distance');
-const infoDurationEl = document.getElementById('info-duration');
-
-map.on('movestart zoomstart',()=>{autoFollow=false;});
-
-function centerOnUser(zoom=15){ if(userCoords) map.flyTo(userCoords,zoom,{duration:1.0}); }
-
-// ===== Auto-update status when entering radius =====
-function checkPointsInUserRadius() {
-  if(!userCoords) return;
-  let changed = false;
-  csvData.forEach((p,i)=>{
-    if(String(p.status) === "0"){ // only status "0" can change to "1" by proximity
-      const d = L.latLng(userCoords).distanceTo(L.latLng([p.lat,p.lon]));
-      if(d <= 50){
-        p.status = "1";
-        const marker = csvMarkersLayer.getLayers()[i];
-        if(marker && marker.setStyle) marker.setStyle({color:'green', fillColor:'green'});
-        changed = true;
-      }
-    }
-  });
-  if(changed) buildOptimizedRoute();
-}
-
-// ===== User marker creation/update (circle or triangle) =====
-function createUserMarker(coords, type="circle", heading=0){
-  if(userMarker){ try{ map.removeLayer(userMarker); }catch(e){} }
-  if(type==="circle"){
-    userMarker = L.circleMarker(coords,{radius:6,color:'#0077cc',fillColor:'#0077cc',fillOpacity:0.8}).addTo(map).bindPopup('Вы здесь');
+  if (!userMarker) {
+    userMarker = L.marker([lat, lon]).addTo(map);
+    document.getElementById("centerBtn").style.display = "flex";
   } else {
-    const triangleIcon = L.divIcon({
-      className: '',
-      html: `<svg width="28" height="28" viewBox="0 0 30 30" style="transform:rotate(${heading}deg); display:block;">
-              <polygon points="15,0 30,30 0,30" fill="white" stroke="black" stroke-width="2"/>
-            </svg>`,
-      iconSize: [28,28],
-      iconAnchor: [14,14]
-    });
-    userMarker = L.marker(coords,{icon:triangleIcon}).addTo(map).bindPopup('Вы здесь');
-  }
-}
-
-function updateUserPosition(pos){ 
-  const newCoords = [pos.coords.latitude,pos.coords.longitude];
-  if(!userMarker){ createUserMarker(newCoords); } 
-  else {
-    if(userMarker.setLatLng) userMarker.setLatLng(newCoords);
-  }
-  userCoords = newCoords;
-  if(!userRadius) userRadius = L.circle(userCoords,{radius:50,color:'black',weight:1,fillOpacity:0}).addTo(map);
-  else userRadius.setLatLng(userCoords);
-  checkPointsInUserRadius();
-  if(autoFollow) centerOnUser(); 
-}
-
-function requestUserLocation(){ 
-  if(!navigator.geolocation){alert('Геолокация не поддерживается');return;} 
-  navigator.geolocation.getCurrentPosition(updateUserPosition,err=>alert('GPS недоступен'),{enableHighAccuracy:true}); 
-}
-
-// ================= Build OSRM Route =================
-function buildOptimizedRoute(){
-  routeLayer.clearLayers();
-  labelLayer.clearLayers();
-  activeRouteCoords = csvData.filter(p => String(p.status) === "0").map(p => [Number(p.lat), Number(p.lon)]);
-  osrmCoords = [...activeRouteCoords];
-
-  if(osrmCoords.length === 0){
-    infoDistanceEl.textContent='Длина: —';
-    infoDurationEl.textContent='Время: —';
-    navRouteCoords = [];
-    if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); remainingRouteLayer=null; }
-    return;
+    userMarker.setLatLng([lat, lon]);
   }
 
-  const tripCoords = userCoords ? [userCoords, ...osrmCoords] : osrmCoords;
-  const coordStr = tripCoords.map(c => `${c[1]},${c[0]}`).join(';');
+  if (followEnabled) map.setView([lat, lon]);
+}
 
-  fetch(`https://router.project-osrm.org/trip/v1/driving/${coordStr}?source=first&roundtrip=false&overview=full&geometries=geojson`)
-    .then(r=>r.json())
-    .then(json=>{
-      if(!json || (json.code && json.code !== 'Ok') || !json.trips || !json.trips.length){
-        console.error('OSRM error or empty response', json);
-        alert('OSRM не смог построить маршрут. Выполнен фолбэк.');
-        fallbackDraw();
-        return;
+document.getElementById("gpsBtn").addEventListener("click", () => {
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      followEnabled = true;
+      updateUserPosition(pos);
+
+      if (!watchId) {
+        watchId = navigator.geolocation.watchPosition(
+          updateUserPosition,
+          err => console.warn("watch error", err),
+          { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+        );
       }
-      const trip = json.trips[0];
-      routeLayer.clearLayers();
-      L.geoJSON(trip.geometry,{style:{color:'#0077cc',weight:3,opacity:0.9}}).addTo(routeLayer);
-      navRouteCoords = trip.geometry.coordinates.map(c => [c[1],c[0]]);
+    },
+    () => alert("Разрешите доступ к геолокации."),
+    { enableHighAccuracy: true }
+  );
+});
 
-      // ================= Лейблы по порядку OSRM (пропускаем первый waypoint - пользователь) =================
-      try{
-        labelLayer.clearLayers();
-        if(trip.waypoints && trip.waypoints.length > 1){
-          const csvWaypoints = trip.waypoints.slice(1); // пропускаем первый waypoint (пользователь)
-          csvWaypoints.forEach((wp, idx) => {
-            const lat = wp.location[1];
-            const lon = wp.location[0];
-            L.marker([lat, lon], {
-              icon: L.divIcon({
-                className: 'waypoint-label',
-                html: `<div>${idx+1}</div>`,
-                iconSize: null,
-                iconAnchor: [0,0]
-              }),
-              interactive: false
-            }).addTo(labelLayer);
+document.getElementById("centerBtn").addEventListener("click", () => {
+  if (!userMarker) return;
+  followEnabled = true;
+  map.setView(userMarker.getLatLng(), map.getZoom());
+});
+
+map.on("dragstart", () => followEnabled = false);
+map.on("zoomstart", () => followEnabled = false);
+
+// ======================= ПОЛИГОНЫ ============================
+function parseWKTPolygon(wkt) {
+  const cleaned = wkt.replace("POLYGON", "").replace(/\(/g, "").replace(/\)/g, "").trim();
+  return cleaned.split(",").map(p => {
+    const [lon, lat] = p.trim().split(" ").map(Number);
+    return [lat, lon];
+  });
+}
+
+function loadPolygons() {
+  fetch("poly.csv")
+    .then(res => res.text())
+    .then(csv => {
+      Papa.parse(csv, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (data) => {
+
+          data.data.forEach(row => {
+            if (!row.geom) return;
+            if (row.deleted_at && row.deleted_at.trim() !== "") return;
+
+            const geom = row.geom.trim();
+            if (!geom.startsWith("POLYGON")) return;
+
+            const coords = parseWKTPolygon(geom);
+
+            const polygon = L.polygon(coords, {
+              color: "blue",
+              weight: 2,
+              fillColor: "blue",
+              fillOpacity: 0.2
+            }).addTo(polygonsLayer);
+
+            if (row.name) polygon.bindTooltip(row.name);
+
+            polygon.on("mouseover", () => polygon.setStyle({ weight: 4, fillOpacity: 0.35 }));
+            polygon.on("mouseout",  () => polygon.setStyle({ weight: 2, fillOpacity: 0.2 }));
+
+            polygon.on("click", () => {
+              polygon.bindPopup(`
+                <div style="font-size:15px;min-width:180px;">
+                  <b>Название:</b><br>
+                  <input id="polyNameField" value="${row.name || ''}" readonly
+                    style="width:100%;margin-top:4px;padding:6px;font-size:14px;">
+                  <button onclick="copyPolygonName()" style="margin-top:8px;width:100%;padding:6px;">
+                    Скопировать
+                  </button>
+                </div>
+              `).openPopup();
+            });
           });
-        } else {
-          // если нет waypoints, можно поставить номера в исходном порядке osrmCoords
-          osrmCoords.forEach((c, idx)=>{
-            L.marker([c[0], c[1]], {
-              icon: L.divIcon({
-                className: 'waypoint-label',
-                html: `<div>${idx+1}</div>`,
-                iconSize: null,
-                iconAnchor: [0,0]
-              }),
-              interactive: false
-            }).addTo(labelLayer);
-          });
+
+          if (polygonsLayer.getLayers().length)
+            map.fitBounds(polygonsLayer.getBounds());
         }
-      }catch(e){ console.error('Ошибка при постановке лейблов', e); }
-
-      const distanceKm = (trip.distance/1000).toFixed(2);
-      infoDistanceEl.textContent = `Длина: ${distanceKm} км`;
-      const totalMinutes = Math.round(trip.duration/60);
-      infoDurationEl.textContent = totalMinutes<60?`${totalMinutes} мин`:`${Math.floor(totalMinutes/60)} ч ${totalMinutes%60} мин`;
-      if(userCoords) centerOnUser(15);
-    })
-    .catch(err=>{
-      console.error('Ошибка запроса к OSRM', err);
-      alert('Ошибка OSRM (сетевая или CORS). Выполняется фолбэк.');
-      fallbackDraw();
-    });
-
-  // ----- Фолбэк: простая линия по точкам и нумерация в исходном порядке -----
-  function fallbackDraw(){
-    try {
-      routeLayer.clearLayers();
-      labelLayer.clearLayers();
-      if(!osrmCoords || !osrmCoords.length){
-        infoDistanceEl.textContent='Длина: —';
-        infoDurationEl.textContent='Время: —';
-        navRouteCoords = [];
-        return;
-      }
-      L.polyline(osrmCoords, {color:'#0077cc', weight:3, opacity:0.9}).addTo(routeLayer);
-      navRouteCoords = osrmCoords.slice();
-      osrmCoords.forEach((c, idx) => {
-        L.marker([c[0], c[1]], {
-          icon: L.divIcon({
-            className: 'waypoint-label',
-            html: `<div>${idx + 1}</div>`,
-            iconSize: null
-          }),
-          interactive: false
-        }).addTo(labelLayer);
       });
-      infoDistanceEl.textContent='Длина: —';
-      infoDurationEl.textContent='Время: —';
-    } catch (e) {
-      console.error('Ошибка фолбэка', e);
-    }
-  }
+    });
 }
 
-// ================= CREATE POPUP with name/subname controls =================
-function createPopup(point, marker, index){
-  // Ensure the fields exist on point
-  if (point.name === undefined) point.name = "";
-  if (point.subname === undefined) point.subname = "";
-  if (point.name_ch === undefined) point.name_ch = "";
-  if (point.subname_ch === undefined) point.subname_ch = "";
-  if (point.comment === undefined) point.comment = "";
+window.copyPolygonName = function () {
+  const input = document.getElementById("polyNameField");
+  if (input) navigator.clipboard.writeText(input.value);
+};
 
-  const container=document.createElement('div');
-  container.style.display='flex'; container.style.flexDirection='column'; container.style.gap='6px';
-  container.style.fontSize='13px';
-  container.style.minWidth='240px';
+// ======================= PUP POINTS с POPUP ============================
+function normalizeCoord(v) {
+  if (!v) return null;
+  return parseFloat(v.toString().replace(",", ".").replace(/[^\d\.\-]+/g, "").trim());
+}
 
-  // LAT/LON + copy
-  const latDiv=document.createElement('div');
-  latDiv.style.display='flex'; latDiv.style.gap='6px';
-  const latInput=document.createElement('input');
-  latInput.type='text';
-  latInput.value=`${point.lat}, ${point.lon}`;
-  latInput.readOnly=true;
-  latInput.className='popup-readonly';
-  latDiv.appendChild(latInput);
-  const copyBtn=document.createElement('button');
-  copyBtn.textContent='📋'; copyBtn.title='Скопировать'; copyBtn.style.fontSize='14px';
-  copyBtn.addEventListener('click',()=>{ navigator.clipboard.writeText(latInput.value); copyBtn.textContent='✔'; setTimeout(()=>copyBtn.textContent='📋',1000); });
-  latDiv.appendChild(copyBtn);
-  container.appendChild(latDiv);
+function createPointPopup(point, marker) {
+  const container = document.createElement('div');
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+  container.style.gap = '4px';
+  container.style.minWidth = '220px';
+  container.style.fontSize = '13px';
 
-  // NAME readonly
-  const nameLabel = document.createElement('div'); nameLabel.textContent='name:'; nameLabel.style.fontWeight='600';
+  // name readonly
+  const nameLabel = document.createElement('div'); nameLabel.textContent='name:';
   const nameRead = document.createElement('input'); nameRead.type='text'; nameRead.value=point.name||''; nameRead.readOnly=true; nameRead.className='popup-readonly';
   container.appendChild(nameLabel); container.appendChild(nameRead);
 
   // name_ch editable
-  const nameChLabel = document.createElement('div'); nameChLabel.textContent='изменение name:'; 
-  const nameChInput = document.createElement('input'); nameChInput.type='text'; nameChInput.value = point.name_ch || ''; nameChInput.className='popup-input';
+  const nameChLabel = document.createElement('div'); nameChLabel.textContent='изменение name:';
+  const nameChInput = document.createElement('input'); nameChInput.type='text'; nameChInput.value=point.name_ch||''; nameChInput.className='popup-input';
   container.appendChild(nameChLabel); container.appendChild(nameChInput);
 
-  // SUBNAME readonly
-  const subLabel = document.createElement('div'); subLabel.textContent='subname:'; subLabel.style.fontWeight='600';
+  // subname readonly
+  const subLabel = document.createElement('div'); subLabel.textContent='subname:';
   const subRead = document.createElement('input'); subRead.type='text'; subRead.value=point.subname||''; subRead.readOnly=true; subRead.className='popup-readonly';
   container.appendChild(subLabel); container.appendChild(subRead);
 
   // subname_ch editable
   const subChLabel = document.createElement('div'); subChLabel.textContent='изменение subname:';
-  const subChInput = document.createElement('input'); subChInput.type='text'; subChInput.value = point.subname_ch || ''; subChInput.className='popup-input';
+  const subChInput = document.createElement('input'); subChInput.type='text'; subChInput.value=point.subname_ch||''; subChInput.className='popup-input';
   container.appendChild(subChLabel); container.appendChild(subChInput);
 
-  // Buttons: "Все хорошо" and "Нужны изменения"
+  // Кнопки
   const okBtn = document.createElement('button'); okBtn.textContent='Все хорошо'; okBtn.className='popup-btn';
   const needBtn = document.createElement('button'); needBtn.textContent='Нужны изменения'; needBtn.className='popup-btn';
   container.appendChild(okBtn); container.appendChild(needBtn);
 
-  // Comment area (kept from previous UI)
-  const commentLabel = document.createElement('div'); commentLabel.textContent='comment:'; commentLabel.style.fontWeight='600';
-  const commentInput = document.createElement('textarea'); commentInput.rows=2; commentInput.value=point.comment||''; commentInput.className='popup-input';
-  const commentSave = document.createElement('button'); commentSave.textContent='💾 сохранить комментарий'; commentSave.className='popup-btn';
-  container.appendChild(commentLabel); container.appendChild(commentInput); container.appendChild(commentSave);
-
-  // Event handlers
-  okBtn.addEventListener('click', ()=>{
-    if(nameChInput.value.trim() !== "" || subChInput.value.trim() !== ""){
-      alert('есть изменения');
-      return;
-    }
+  okBtn.addEventListener('click', () => {
+    if(nameChInput.value.trim()!=="" || subChInput.value.trim()!=="") { alert("есть изменения"); return; }
     point.status = "1";
-    point.name_ch = "";
-    point.subname_ch = "";
-    // update marker color
-    const m = csvMarkersLayer.getLayers()[index];
-    if(m && m.setStyle) m.setStyle({color:'green', fillColor:'green'});
-    // ensure nav rebuild
-    buildOptimizedRoute();
+    point.name_ch=""; point.subname_ch="";
+    marker.setIcon(L.icon({iconUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
+                           shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+                           iconSize:[25,41], iconAnchor:[12,41]}));
     marker.closePopup();
   });
 
-  needBtn.addEventListener('click', ()=>{
-    if(nameChInput.value.trim() === "" || subChInput.value.trim() === ""){
-      alert('нет изменений');
-      return;
-    }
+  needBtn.addEventListener('click', () => {
+    if(nameChInput.value.trim()==="" || subChInput.value.trim()==="") { alert("нет изменений"); return; }
     point.status = "2";
     point.name_ch = nameChInput.value;
     point.subname_ch = subChInput.value;
-    const m = csvMarkersLayer.getLayers()[index];
-    if(m && m.setStyle) m.setStyle({color:'#f39c12', fillColor:'#f39c12'}); // orange for "needs changes"
-    buildOptimizedRoute();
+    marker.setIcon(L.icon({iconUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-orange.png",
+                           shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+                           iconSize:[25,41], iconAnchor:[12,41]}));
     marker.closePopup();
-  });
-
-  commentSave.addEventListener('click', ()=>{
-    point.comment = commentInput.value;
-    // no further action required
-    commentSave.textContent = '✔';
-    setTimeout(()=>commentSave.textContent = '💾 сохранить комментарий', 1000);
   });
 
   return container;
 }
 
-// ================= EVENTS and CSV loading =================
-document.getElementById('csvFile').addEventListener('change', function(ev){
-  const file=ev.target.files[0]; if(!file) return; csvFileName=file.name;
-  Papa.parse(file,{header:true,dynamicTyping:false,skipEmptyLines:true,complete:function(results){
-    const data=results.data||[]; 
-    csvData=[]; 
-    csvMarkersLayer.clearLayers(); 
-    routeLayer.clearLayers();
-    labelLayer.clearLayers();
-    activeRouteCoords=[]; 
-    osrmCoords=[];
+function loadPoints() {
+  fetch("pups_m.csv")
+    .then(res => res.text())
+    .then(csv => {
+      Papa.parse(csv, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (data) => {
+          data.data.forEach(row => {
+            if (row.deleted_at && row.deleted_at.trim() !== "") return;
 
-    data.forEach((r,i)=>{
-      const lat = r.lat !== undefined ? r.lat : (r.latitude !== undefined ? r.latitude : '');
-      const lon = r.lon !== undefined ? r.lon : (r.longitude !== undefined ? r.longitude : '');
-      const status = (String(r.status) === "1") ? "1" : ((String(r.status) === "2") ? "2" : "0");
-      const comment = r.comment || "";
-      const name = r.name || "";
-      const subname = r.subname || "";
-      const name_ch = r.name_ch || "";
-      const subname_ch = r.subname_ch || "";
+            let lat = normalizeCoord(row.lat);
+            let lon = normalizeCoord(row.lon);
+            if (isNaN(lat) || isNaN(lon)) return;
 
-      // push object (ensure fields exist)
-      csvData.push({lat,lon,status,comment,name,subname,name_ch,subname_ch});
+            const point = {
+              lat, lon,
+              name: row.name||"",
+              subname: row.subname||"",
+              name_ch: row.name_ch||"",
+              subname_ch: row.subname_ch||"",
+              status: row.status||"0"
+            };
 
-      const color = status === "0" ? 'red' : (status === "1" ? 'green' : (status === "2" ? '#f39c12' : 'red'));
-      // marker order must match csvData index for checkPointsInUserRadius()
-      const marker = L.circleMarker([lat,lon],{radius:6,color:color,fillColor:color,fillOpacity:0.8}).addTo(csvMarkersLayer);
-      marker.bindPopup(createPopup(csvData[i],marker,i),{minWidth:240});
-    });
+            const marker = L.marker([lat, lon], {
+              icon: L.icon({iconUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+                            shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+                            iconSize:[25,41], iconAnchor:[12,41]})
+            }).addTo(pointsLayer);
 
-    buildOptimizedRoute();
-  }});
-});
+            marker.bindPopup(createPointPopup(point, marker));
 
-document.getElementById('downloadBtn').addEventListener('click', ()=>{
-  if(!csvData.length){ alert('Нет данных'); return; }
-  const csv=Papa.unparse(csvData);
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob); 
-  const link=document.createElement('a'); 
-  link.href=url; 
-  link.download=csvFileName||'updated.csv';
-  document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
-});
-
-document.getElementById('locBtn').addEventListener('click',()=>{ autoFollow=true; requestUserLocation(); });
-document.getElementById('refreshBtn').addEventListener('click',()=>{ buildOptimizedRoute(); });
-document.getElementById('clearBtn').addEventListener('click',()=>{ 
-  csvMarkersLayer.clearLayers(); 
-  routeLayer.clearLayers(); 
-  labelLayer.clearLayers();
-  if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); remainingRouteLayer=null; }
-  document.getElementById('csvFile').value=''; 
-  csvData=[]; activeRouteCoords=[]; osrmCoords=[]; navRouteCoords=[]; 
-  infoDistanceEl.textContent='Длина: —'; 
-  infoDurationEl.textContent='Время: —'; 
-});
-document.getElementById('centerUserBtn').addEventListener('click',()=>{ if(userCoords){ autoFollow=true; centerOnUser(); } });
-
-// ================= REAL GPS NAVIGATION (with remaining route and 200m yellow line) =================
-function startRealNavigation(){
-  if(!navRouteCoords.length){ alert('Нет маршрута для навигации'); return; }
-  if(!navigator.geolocation){ alert('Геолокация не поддерживается'); return; }
-  if(navWatchId) navigator.geolocation.clearWatch(navWatchId);
-  if(!remainingRouteLayer) remainingRouteLayer = L.layerGroup().addTo(map);
-
-  navWatchId = navigator.geolocation.watchPosition(pos=>{
-    const newCoords = [pos.coords.latitude,pos.coords.longitude];
-
-    // compute heading from previous userCoords if exists
-    if(userCoords){
-      const dx = newCoords[1]-userCoords[1];
-      const dy = newCoords[0]-userCoords[0];
-      // atan2(dy,dx) returns radians; we convert and adjust so triangle points forward
-      userHeading = Math.atan2(dy,dx) * 180/Math.PI + 90;
-    }
-
-    userCoords = newCoords;
-    createUserMarker(userCoords,"triangle",userHeading);
-
-    if(!userRadius) userRadius = L.circle(userCoords,{radius:50,color:'black',weight:1,fillOpacity:0}).addTo(map);
-    else userRadius.setLatLng(userCoords);
-
-    checkPointsInUserRadius();
-    if(autoFollow) centerOnUser();
-
-    // Остаток маршрута красной линией
-    if(navRouteCoords.length>0){
-      let nearestIndex=0, minDist=Infinity;
-      for(let i=0;i<navRouteCoords.length;i++){
-        const dx=userCoords[0]-navRouteCoords[i][0], dy=userCoords[1]-navRouteCoords[i][1];
-        const dist=Math.sqrt(dx*dx+dy*dy);
-        if(dist<minDist){ minDist=dist; nearestIndex=i; }
-      }
-      remainingRouteLayer.clearLayers();
-      let points=[[userCoords[0],userCoords[1]], navRouteCoords[nearestIndex]];
-      L.polyline(points,{color:'red',weight:3,opacity:0.9}).addTo(remainingRouteLayer);
-      let remainingPoints=navRouteCoords.slice(nearestIndex);
-      L.polyline(remainingPoints,{color:'red',weight:3,opacity:0.9}).addTo(remainingRouteLayer);
-    
-      // Жёлтая линия 200м
-      let yellowLineCoords=[[userCoords[0],userCoords[1]]];
-      let distAccum = 0;
-      for(let i=nearestIndex; i<navRouteCoords.length-1; i++){
-        const from = L.latLng(navRouteCoords[i]);
-        const to = L.latLng(navRouteCoords[i+1]);
-        const segDist = from.distanceTo(to);
-        if(distAccum + segDist > 200){
-          const remaining = 200 - distAccum;
-          const ratio = remaining/segDist;
-          const lat = from.lat + (to.lat - from.lat) * ratio;
-          const lng = from.lng + (to.lng - from.lng) * ratio;
-          yellowLineCoords.push([lat,lng]);
-          break;
-        } else {
-          yellowLineCoords.push([to.lat,to.lng]);
-          distAccum += segDist;
+            if (point.subname && point.subname.trim()!=="") {
+              const label = L.marker([lat, lon], {
+                icon: L.divIcon({className:"", html:`<div class="sub-label">${point.subname}</div>`, iconSize:[0,0], iconAnchor:[0,0]}),
+                interactive:false
+              });
+              pointsLayer.addLayer(label);
+            }
+          });
         }
-      }
-      L.polyline(yellowLineCoords,{color:'yellow',weight:4,opacity:0.9}).addTo(remainingRouteLayer);
-    }
-
-  }, err=>alert('Ошибка GPS'), {enableHighAccuracy:true, maximumAge:0, timeout:5000});
+      });
+    });
 }
 
-function stopRealNavigation(){ 
-  if(navWatchId){ navigator.geolocation.clearWatch(navWatchId); navWatchId=null; } 
-  if(remainingRouteLayer){ remainingRouteLayer.clearLayers(); } 
-  if(userCoords) createUserMarker(userCoords,"circle");
-}
+// ======================= ПЕРЕКЛЮЧАТЕЛИ ============================
+document.getElementById("chkPoly").addEventListener("change", function () {
+  if (this.checked) map.addLayer(polygonsLayer);
+  else map.removeLayer(polygonsLayer);
+});
 
-document.getElementById('navStartBtn').addEventListener('click', startRealNavigation);
-document.getElementById('navStopBtn').addEventListener('click', stopRealNavigation);
+document.getElementById("chkPups").addEventListener("change", function () {
+  if (this.checked) map.addLayer(pointsLayer);
+  else map.removeLayer(pointsLayer);
+});
 
+// ======================= ЗАПУСК ============================
+loadPolygons();
+loadPoints();
 </script>
 </body>
 </html>
