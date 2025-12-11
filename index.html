@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <title>Карта + GPS + Полигоны + Точки</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -25,6 +25,7 @@
     border: 1px solid #ccc;
     font-size: 15px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    cursor: pointer;
   }
 
   #copyToast {
@@ -50,17 +51,14 @@
 <div id="copyToast">Скопировано!</div>
 
 <script>
-// ------------------ карта ------------------
-const defaultCenter = [-8.05, -34.9];
-const map = L.map('map').setView(defaultCenter, 13);
-
+// ========================== MAP ==========================
+const map = L.map('map').setView([-8.05, -34.9], 13);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// слои
 const polygonsLayer = L.layerGroup().addTo(map);
 const pointsLayer = L.layerGroup().addTo(map);
 
-// ------------------ GPS ------------------
+// ========================== GPS ==========================
 let userMarker = null;
 let watchId = null;
 
@@ -87,37 +85,43 @@ document.getElementById("gpsBtn").addEventListener("click", () => {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       updateUserPosition(pos);
-      if (watchId === null) {
+      if (watchId == null) {
         watchId = navigator.geolocation.watchPosition(
           updateUserPosition,
-          (err) => console.warn("watchPosition error", err),
-          { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+          (err) => console.warn(err),
+          { enableHighAccuracy: true }
         );
       }
     },
-    () => alert("Разрешите доступ к геолокации."),
+    () => alert("Разрешите доступ к геопозиции."),
     { enableHighAccuracy: true }
   );
 });
 
-// ------------------ Toast копирования ------------------
+// ========================== TOAST ==========================
 function showCopiedToast() {
   const t = document.getElementById("copyToast");
   t.style.display = "block";
   setTimeout(() => t.style.display = "none", 1200);
 }
 
-// ------------------ Парсер POLYGON ------------------
+window.copyPolygonName = function () {
+  const el = document.getElementById("polyNameField");
+  if (el) navigator.clipboard.writeText(el.value);
+  showCopiedToast();
+};
+
+// ========================== PARSE POLYGON ==========================
 function parseWKTPolygon(wkt) {
+  // POLYGON((lon lat, lon lat...))
   const cleaned = wkt.replace("POLYGON", "").replace(/\(/g, "").replace(/\)/g, "").trim();
-  const pairs = cleaned.split(",");
-  return pairs.map(p => {
+  return cleaned.split(",").map(p => {
     const [lon, lat] = p.trim().split(" ").map(Number);
     return [lat, lon];
   });
 }
 
-// ------------------ Загрузка полигонов ------------------
+// ========================== LOAD POLYGONS ==========================
 function loadPolygons() {
   fetch("poly.csv")
     .then(r => r.text())
@@ -127,43 +131,45 @@ function loadPolygons() {
       complete: res => {
         res.data.forEach(row => {
           if (!row.geom) return;
-          if (row.deleted_at && row.deleted_at.trim() !== "") return; // фильтр
+          if (row.deleted_at && row.deleted_at.trim() !== "") return;
 
-          if (row.geom.startsWith("POLYGON")) {
-            const coords = parseWKTPolygon(row.geom);
-            if (coords.length) {
-              const poly = L.polygon(coords, {
-                color: "blue",
-                weight: 2,
-                fillColor: "blue",
-                fillOpacity: 0.2
-              }).addTo(polygonsLayer);
+          if (!row.geom.startsWith("POLYGON")) return;
 
-              if (row.name) poly.bindTooltip(row.name);
+          const coords = parseWKTPolygon(row.geom);
+          if (!coords.length) return;
 
-              poly.on("mouseover", function () {
-                this.setStyle({ weight: 4, fillOpacity: 0.35 });
-              });
-              poly.on("mouseout", function () {
-                this.setStyle({ weight: 2, fillOpacity: 0.2 });
-              });
+          const poly = L.polygon(coords, {
+            color: "blue",
+            weight: 2,
+            fillColor: "blue",
+            fillOpacity: 0.2
+          }).addTo(polygonsLayer);
 
-              poly.on("click", () => {
-                const popupContent = `
-                  <div style="font-size:15px;min-width:180px;">
-                    <b>Название:</b><br>
-                    <input id="polyNameField" value="${row.name || ''}" readonly 
-                      style="width:100%;margin-top:4px;padding:6px;font-size:14px;">
-                    <button onclick="copyPolygonName()"
-                      style="margin-top:8px;width:100%;padding:6px;border-radius:6px;border:1px solid #666;background:#eee;">
-                      Скопировать
-                    </button>
-                  </div>
-                `;
-                poly.bindPopup(popupContent).openPopup();
-              });
-            }
-          }
+          // подпись
+          if (row.name) poly.bindTooltip(row.name);
+
+          // hover
+          poly.on("mouseover", function () {
+            this.setStyle({ weight: 4, fillOpacity: 0.35 });
+          });
+          poly.on("mouseout", function () {
+            this.setStyle({ weight: 2, fillOpacity: 0.2 });
+          });
+
+          // popup
+          poly.on("click", () => {
+            const popupContent = `
+              <div style="font-size:15px;min-width:180px;">
+                <b>Название:</b><br>
+                <input id="polyNameField" value="${row.name || ''}" readonly
+                  style="width:100%;margin-top:4px;padding:6px;font-size:14px;">
+                <button onclick="copyPolygonName()"
+                  style="margin-top:8px;width:100%;padding:6px;border-radius:6px;border:1px solid #666;background:#eee;">
+                  Скопировать
+                </button>
+              </div>`;
+            poly.bindPopup(popupContent).openPopup();
+          });
         });
 
         if (polygonsLayer.getLayers().length > 0)
@@ -172,13 +178,7 @@ function loadPolygons() {
     }));
 }
 
-window.copyPolygonName = function () {
-  const el = document.getElementById("polyNameField");
-  if (el) navigator.clipboard.writeText(el.value);
-  showCopiedToast();
-};
-
-// ------------------ Загрузка точек pups_m.csv (lat, lon) ------------------
+// ========================== LOAD POINTS (lat/lon) ==========================
 function loadPoints() {
   fetch("pups_m.csv")
     .then(r => r.text())
@@ -187,30 +187,28 @@ function loadPoints() {
       skipEmptyLines: true,
       complete: res => {
         res.data.forEach(row => {
-
           if (row.deleted_at && row.deleted_at.trim() !== "") return;
+          if (!row.lat || !row.lon) return;
 
-          // координаты из полей lat / lon
           const lat = parseFloat(row.lat);
           const lon = parseFloat(row.lon);
-
           if (isNaN(lat) || isNaN(lon)) return;
 
-          const marker = L.marker([lat, lon], {
+          L.marker([lat, lon], {
             icon: L.icon({
               iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
               iconSize: [25, 41],
               iconAnchor: [12, 41]
             })
-          }).addTo(pointsLayer);
-
-          marker.bindTooltip(`<b>${row.name || ""}</b><br>${row.subname || ""}`);
+          })
+          .addTo(pointsLayer)
+          .bindTooltip(`<b>${row.name || ""}</b><br>${row.subname || ""}`);
         });
       }
     }));
 }
 
-// ------------------ Старт ------------------
+// ========================== START ==========================
 loadPolygons();
 loadPoints();
 </script>
