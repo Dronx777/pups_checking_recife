@@ -265,7 +265,8 @@ function createPointPopup(point, marker) {
   // Кнопки
   const okBtn = document.createElement('button'); okBtn.textContent='Все хорошо'; okBtn.className='popup-btn';
   const needBtn = document.createElement('button'); needBtn.textContent='Нужны изменения'; needBtn.className='popup-btn';
-  container.appendChild(okBtn); container.appendChild(needBtn);
+  const clearBtn = document.createElement('button'); clearBtn.textContent='Очистить'; clearBtn.className='popup-btn';
+  container.appendChild(okBtn); container.appendChild(needBtn); container.appendChild(clearBtn);
 
   okBtn.addEventListener('click', () => {
     if(nameChInput.value.trim()!=="" || subChInput.value.trim()!=="") { alert("есть изменения"); return; }
@@ -286,6 +287,15 @@ function createPointPopup(point, marker) {
                            shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
                            iconSize:[25,41], iconAnchor:[12,41]}));
     marker.closePopup();
+  });
+
+  clearBtn.addEventListener('click', () => {
+    point.status = "0";
+    point.name_ch=""; point.subname_ch="";
+    nameChInput.value=""; subChInput.value="";
+    marker.setIcon(L.icon({iconUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+                           shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+                           iconSize:[25,41], iconAnchor:[12,41]}));
   });
 
   return container;
