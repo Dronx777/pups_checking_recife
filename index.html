@@ -26,7 +26,6 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
 
-  /* Всплывающее уведомление */
   #copyToast {
     position: fixed;
     bottom: 25px;
@@ -51,15 +50,16 @@
 
 <script>
 // === Инициализация карты ===
-const defaultCenter = [-8.05, -34.9];  // Recife
+const defaultCenter = [-8.05, -34.9];  
 const map = L.map('map').setView(defaultCenter, 13);
 
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ====== Слой для полигонов ======
+// Слои
 const polygonsLayer = L.layerGroup().addTo(map);
+const pointsLayer = L.layerGroup().addTo(map);
 
-// ====== GPS ======
+// === GPS ===
 let userMarker = null;
 let watchId = null;
 
@@ -101,86 +101,14 @@ document.getElementById("gpsBtn").addEventListener("click", () => {
   );
 });
 
-// ====== Popup копирования ======
+// === Toast ===
 function showCopiedToast() {
-  const toast = document.getElementById("copyToast");
-  toast.style.display = "block";
-  setTimeout(() => { toast.style.display = "none"; }, 1200);
+  const t = document.getElementById("copyToast");
+  t.style.display = "block";
+  setTimeout(() => t.style.display = "none", 1200);
 }
 
-// ====== Загрузка CSV с полигонами ======
-function loadPolygons() {
-  const url = "poly.csv"; // лежит в корне GitHub Pages
-
-  fetch(url)
-    .then(res => res.text())
-    .then(csvText => {
-      Papa.parse(csvText, {
-        header: true,
-        dynamicTyping: false,
-        skipEmptyLines: true,
-        complete: (result) => {
-          const rows = result.data;
-
-          rows.forEach(r => {
-            if (!r.geom) return;
-
-            // Убираем deleted_at != null
-            if (r.deleted_at && r.deleted_at.trim() !== "") return;
-
-            const geom = r.geom.trim();
-
-            if (geom.startsWith("POLYGON")) {
-              const coords = parseWKTPolygon(geom);
-
-              if (coords.length) {
-                const polygon = L.polygon(coords, {
-                  color: 'blue',
-                  weight: 2,
-                  fillColor: 'blue',
-                  fillOpacity: 0.2
-                }).addTo(polygonsLayer);
-
-                // ===== Подпись при наведении =====
-                if (r.name) polygon.bindTooltip(r.name);
-
-                // ===== Подсветка =====
-                polygon.on("mouseover", function () {
-                  this.setStyle({ weight: 4, fillOpacity: 0.35 });
-                });
-                polygon.on("mouseout", function () {
-                  this.setStyle({ weight: 2, fillOpacity: 0.2 });
-                });
-
-                // ===== Popup по клику =====
-                polygon.on("click", () => {
-                  const popupContent = `
-                    <div style="font-size:15px;min-width:180px;">
-                      <b>Название:</b><br>
-                      <input id="polyNameField" value="${r.name || ''}" readonly 
-                        style="width:100%;margin-top:4px;padding:6px;font-size:14px;">
-                      <button onclick="copyPolygonName()" 
-                        style="margin-top:8px;width:100%;padding:6px;border-radius:6px;border:1px solid #666;background:#eee;">
-                        Скопировать
-                      </button>
-                    </div>
-                  `;
-                  polygon.bindPopup(popupContent).openPopup();
-                });
-              }
-            }
-          });
-
-          if (polygonsLayer.getLayers().length > 0) {
-            map.fitBounds(polygonsLayer.getBounds());
-          }
-        }
-      });
-    })
-    .catch(err => console.error("Ошибка загрузки poly.csv:", err));
-}
-
-// ====== Функция копирования ======
+// === Копирование ===
 window.copyPolygonName = function () {
   const input = document.getElementById("polyNameField");
   if (!input) return;
@@ -188,14 +116,9 @@ window.copyPolygonName = function () {
   showCopiedToast();
 };
 
-// ====== Парсер WKT POLYGON ======
+// === Парсер WKT POLYGON ===
 function parseWKTPolygon(wkt) {
-  const cleaned = wkt
-    .replace("POLYGON", "")
-    .replace(/\(/g, "")
-    .replace(/\)/g, "")
-    .trim();
-
+  const cleaned = wkt.replace("POLYGON", "").replace(/\(/g, "").replace(/\)/g, "").trim();
   const pairs = cleaned.split(",");
   const latlngs = [];
 
@@ -204,17 +127,129 @@ function parseWKTPolygon(wkt) {
     if (parts.length >= 2) {
       const lon = parseFloat(parts[0]);
       const lat = parseFloat(parts[1]);
-      if (!isNaN(lat) && !isNaN(lon)) {
-        latlngs.push([lat, lon]);
-      }
+      if (!isNaN(lat) && !isNaN(lon)) latlngs.push([lat, lon]);
     }
   });
 
   return latlngs;
 }
 
-// ====== Старт загрузки ======
+// === Парсер WKT POINT ===
+function parseWKTPoint(wkt) {
+  const cleaned = wkt.replace("POINT", "").replace(/\(/g, "").replace(/\)/g, "").trim();
+  const parts = cleaned.split(" ");
+
+  if (parts.length < 2) return null;
+
+  const lon = parseFloat(parts[0]);
+  const lat = parseFloat(parts[1]);
+
+  if (isNaN(lat) || isNaN(lon)) return null;
+
+  return [lat, lon];
+}
+
+// === Загрузка полигонов ===
+function loadPolygons() {
+  fetch("poly.csv")
+    .then(res => res.text())
+    .then(csvText => {
+      Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (result) => {
+          result.data.forEach(r => {
+            if (!r.geom) return;
+
+            if (r.deleted_at && r.deleted_at.trim() !== "") return;
+
+            const geom = r.geom.trim();
+
+            if (geom.startsWith("POLYGON")) {
+              const coords = parseWKTPolygon(geom);
+              if (!coords.length) return;
+
+              const polygon = L.polygon(coords, {
+                color: 'blue',
+                weight: 2,
+                fillColor: 'blue',
+                fillOpacity: 0.2
+              }).addTo(polygonsLayer);
+
+              if (r.name) polygon.bindTooltip(r.name);
+
+              polygon.on("mouseover", function () {
+                this.setStyle({ weight: 4, fillOpacity: 0.35 });
+              });
+              polygon.on("mouseout", function () {
+                this.setStyle({ weight: 2, fillOpacity: 0.2 });
+              });
+
+              polygon.on("click", () => {
+                const popupContent = `
+                  <div style="font-size:15px;min-width:180px;">
+                    <b>Название:</b><br>
+                    <input id="polyNameField" 
+                      value="${r.name || ''}" readonly 
+                      style="width:100%;margin-top:4px;padding:6px;font-size:14px;">
+                    <button onclick="copyPolygonName()" 
+                      style="margin-top:8px;width:100%;padding:6px;border-radius:6px;border:1px solid #666;background:#eee;">
+                      Скопировать
+                    </button>
+                  </div>
+                `;
+                polygon.bindPopup(popupContent).openPopup();
+              });
+            }
+          });
+
+          if (polygonsLayer.getLayers().length > 0) {
+            map.fitBounds(polygonsLayer.getBounds());
+          }
+        }
+      });
+    });
+}
+
+// === Загрузка точек pups_m.csv ===
+function loadPoints() {
+  fetch("pups_m.csv")
+    .then(res => res.text())
+    .then(csvText => {
+      Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (result) => {
+          result.data.forEach(r => {
+            if (!r.geom) return;
+
+            if (r.deleted_at && r.deleted_at.trim() !== "") return;
+
+            const point = parseWKTPoint(r.geom);
+            if (!point) return;
+
+            const name = r.name || "";
+            const subname = r.subname || "";
+
+            const marker = L.circleMarker(point, {
+              radius: 6,
+              color: "red",
+              fillColor: "red",
+              fillOpacity: 0.9
+            }).addTo(pointsLayer);
+
+            // подпись
+            const label = `${name}<br>${subname}`;
+            marker.bindTooltip(label, { direction: "top" });
+          });
+        }
+      });
+    });
+}
+
+// === Старт ===
 loadPolygons();
+loadPoints();
 
 </script>
 
