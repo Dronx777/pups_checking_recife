@@ -10,7 +10,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+  }
   #map { height: 100vh; width: 100vw; }
 
   #gpsBtn {
@@ -27,18 +29,37 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
 
-  /* Кнопка центрирования справа */
+  /* Кнопка-прицел */
   #centerBtn {
     position: absolute;
     right: 15px;
     top: 80px;
+    width: 50px;
+    height: 50px;
     z-index: 1000;
-    padding: 10px;
+    border-radius: 50%;
     background: white;
-    border-radius: 8px;
     border: 1px solid #ccc;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    font-size: 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #centerBtn::before {
+    content: "";
+    width: 22px;
+    height: 22px;
+    border: 2px solid black;
+    border-radius: 50%;
+    position: relative;
+  }
+  #centerBtn::after {
+    content: "";
+    width: 3px;
+    height: 3px;
+    background: black;
+    border-radius: 50%;
+    position: absolute;
   }
 
   #copyToast {
@@ -60,7 +81,7 @@
 <body>
 
 <button id="gpsBtn">GPS</button>
-<button id="centerBtn" style="display:none;">Центр</button>
+<button id="centerBtn" style="display:none;"></button>
 
 <div id="map"></div>
 <div id="copyToast">Скопировано!</div>
@@ -70,14 +91,13 @@
 const map = L.map('map').setView([-8.05, -34.9], 13);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// Слои
 const polygonsLayer = L.layerGroup().addTo(map);
 const pointsLayer = L.layerGroup().addTo(map);
 
 // GPS
 let userMarker = null;
 let watchId = null;
-let followEnabled = false; // <=== прилипание карты
+let followEnabled = false;
 
 // ====== Обновление GPS ======
 function updateUserPosition(position) {
@@ -86,27 +106,25 @@ function updateUserPosition(position) {
 
   if (!userMarker) {
     userMarker = L.marker([lat, lon]).addTo(map);
-    document.getElementById("centerBtn").style.display = "block";
+    document.getElementById("centerBtn").style.display = "flex";
   } else {
     userMarker.setLatLng([lat, lon]);
   }
 
-  if (followEnabled) {
-    map.setView([lat, lon]);
-  }
+  if (followEnabled) map.setView([lat, lon]);
 }
 
 // ====== Запуск GPS ======
 document.getElementById("gpsBtn").addEventListener("click", () => {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
-      followEnabled = true; // включаем прилипание
+      followEnabled = true;
       updateUserPosition(pos);
 
       if (!watchId) {
         watchId = navigator.geolocation.watchPosition(
           updateUserPosition,
-          (err) => console.warn("watch error", err),
+          err => console.warn("watch error", err),
           { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
         );
       }
@@ -116,20 +134,20 @@ document.getElementById("gpsBtn").addEventListener("click", () => {
   );
 });
 
-// ====== Центрирование по кнопке справа ======
+// ====== Центрирование по кнопке-прицелу ======
 document.getElementById("centerBtn").addEventListener("click", () => {
-  if (userMarker) {
-    const p = userMarker.getLatLng();
-    map.setView(p, map.getZoom());
-  }
+  if (!userMarker) return;
+  const p = userMarker.getLatLng();
+  followEnabled = true; // при нажатии снова включается follow
+  map.setView(p, map.getZoom());
 });
 
-// ====== Отключение follow при движении карты ======
-map.on("dragstart", () => { followEnabled = false; });
-map.on("zoomstart", () => { followEnabled = false; });
+// ====== Если пользователь двигает карту — follow выключается ======
+map.on("dragstart", () => followEnabled = false);
+map.on("zoomstart", () => followEnabled = false);
 
 
-// ======================= ВСПЛЫВАЮЩЕЕ "СКОПИРОВАНО" ============================
+// ======================= TOAST ============================
 function showCopiedToast() {
   const toast = document.getElementById("copyToast");
   toast.style.display = "block";
@@ -141,10 +159,7 @@ function showCopiedToast() {
 function normalizeCoord(v) {
   if (!v) return null;
   return parseFloat(
-    v.toString()
-      .replace(",", ".")
-      .replace(/[^\d\.\-]+/g, "")
-      .trim()
+    v.toString().replace(",", ".").replace(/[^\d\.\-]+/g, "").trim()
   );
 }
 
@@ -156,11 +171,9 @@ function loadPoints() {
         header: true,
         skipEmptyLines: true,
         complete: (data) => {
-
           data.data.forEach(row => {
             let lat = normalizeCoord(row.lat);
             let lon = normalizeCoord(row.lon);
-
             if (isNaN(lat) || isNaN(lon)) return;
 
             L.marker([lat, lon], {
@@ -172,7 +185,6 @@ function loadPoints() {
               })
             }).addTo(pointsLayer);
           });
-
         }
       });
     });
@@ -181,7 +193,11 @@ function loadPoints() {
 
 // ======================= ПОЛИГОНЫ ============================
 function parseWKTPolygon(wkt) {
-  const cleaned = wkt.replace("POLYGON", "").replace(/\(/g, "").replace(/\)/g, "").trim();
+  const cleaned = wkt.replace("POLYGON", "")
+                     .replace(/\(/g, "")
+                     .replace(/\)/g, "")
+                     .trim();
+
   return cleaned.split(",").map(p => {
     const [lon, lat] = p.trim().split(" ").map(Number);
     return [lat, lon];
@@ -196,7 +212,6 @@ function loadPolygons() {
         header: true,
         skipEmptyLines: true,
         complete: (data) => {
-
           data.data.forEach(row => {
             if (!row.geom) return;
             if (row.deleted_at && row.deleted_at.trim() !== "") return;
@@ -205,23 +220,16 @@ function loadPolygons() {
             if (!geom.startsWith("POLYGON")) return;
 
             const coords = parseWKTPolygon(geom);
-            if (!coords.length) return;
 
             const polygon = L.polygon(coords, {
-              color: "blue",
-              weight: 2,
-              fillColor: "blue",
-              fillOpacity: 0.2
+              color: "blue", weight: 2,
+              fillColor: "blue", fillOpacity: 0.2
             }).addTo(polygonsLayer);
 
             if (row.name) polygon.bindTooltip(row.name);
 
-            polygon.on("mouseover", function () {
-              this.setStyle({ weight: 4, fillOpacity: 0.35 });
-            });
-            polygon.on("mouseout", function () {
-              this.setStyle({ weight: 2, fillOpacity: 0.2 });
-            });
+            polygon.on("mouseover", () => polygon.setStyle({ weight: 4, fillOpacity: 0.35 }));
+            polygon.on("mouseout",  () => polygon.setStyle({ weight: 2, fillOpacity: 0.2 }));
 
             polygon.on("click", () => {
               polygon.bindPopup(`
@@ -237,10 +245,8 @@ function loadPolygons() {
             });
           });
 
-          if (polygonsLayer.getLayers().length > 0) {
+          if (polygonsLayer.getLayers().length)
             map.fitBounds(polygonsLayer.getBounds());
-          }
-
         }
       });
     });
