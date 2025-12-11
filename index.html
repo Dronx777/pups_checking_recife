@@ -72,7 +72,6 @@
     z-index: 2000;
   }
 
-  /* Лейблы subname */
   .sub-label {
     font-size: 14px;
     font-weight: bold;
@@ -85,10 +84,37 @@
     white-space: nowrap;
     transform: translate(-50%, -10px);
   }
+
+  /* Панель слоёв слева */
+  #layersPanel {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    padding: 10px 15px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    z-index: 1200;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    font-size: 15px;
+  }
+  #layersPanel label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    cursor: pointer;
+  }
 </style>
 </head>
 
 <body>
+
+<!-- Панель слоёв -->
+<div id="layersPanel">
+  <label><input type="checkbox" id="chkPoly" checked> Полигоны</label>
+  <label><input type="checkbox" id="chkPups" checked> Pup Points</label>
+</div>
 
 <button id="gpsBtn">GPS</button>
 <button id="centerBtn" style="display:none;"></button>
@@ -101,6 +127,7 @@
 const map = L.map('map').setView([-8.05, -34.9], 13);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+// Слои
 const polygonsLayer = L.layerGroup().addTo(map);
 const pointsLayer = L.layerGroup().addTo(map);
 
@@ -147,15 +174,13 @@ document.getElementById("gpsBtn").addEventListener("click", () => {
 // ====== Центрирование ======
 document.getElementById("centerBtn").addEventListener("click", () => {
   if (!userMarker) return;
-  const p = userMarker.getLatLng();
   followEnabled = true;
-  map.setView(p, map.getZoom());
+  map.setView(userMarker.getLatLng(), map.getZoom());
 });
 
-// ====== Выключение follow при движении карты ======
+// ====== Отключение follow ======
 map.on("dragstart", () => followEnabled = false);
 map.on("zoomstart", () => followEnabled = false);
-
 
 // ======================= TOAST ============================
 function showCopiedToast() {
@@ -164,8 +189,7 @@ function showCopiedToast() {
   setTimeout(() => toast.style.display = "none", 1200);
 }
 
-
-// ======================= ЗАГРУЗКА ТОЧЕК pups_m.csv ============================
+// ======================= ЗАГРУЗКА ТОЧЕК (pups_m.csv) ============================
 function normalizeCoord(v) {
   if (!v) return null;
   return parseFloat(v.toString().replace(",", ".").replace(/[^\d\.\-]+/g, "").trim());
@@ -181,6 +205,10 @@ function loadPoints() {
         complete: (data) => {
 
           data.data.forEach(row => {
+
+            // === Убираем точки, где deleted_at != null ===
+            if (row.deleted_at && row.deleted_at.trim() !== "") return;
+
             let lat = normalizeCoord(row.lat);
             let lon = normalizeCoord(row.lon);
             if (isNaN(lat) || isNaN(lon)) return;
@@ -194,7 +222,7 @@ function loadPoints() {
               })
             }).addTo(pointsLayer);
 
-            // ====== ЛЕЙБЛ SUBNAME ======
+            // ===== Лейбл subname =====
             if (row.subname && row.subname.trim() !== "") {
               const label = L.marker([lat, lon], {
                 icon: L.divIcon({
@@ -213,7 +241,6 @@ function loadPoints() {
       });
     });
 }
-
 
 // ======================= ПОЛИГОНЫ ============================
 function parseWKTPolygon(wkt) {
@@ -280,6 +307,18 @@ window.copyPolygonName = function () {
   if (input) navigator.clipboard.writeText(input.value);
   showCopiedToast();
 };
+
+
+// ======================= ПЕРЕКЛЮЧАТЕЛИ СЛОЁВ ============================
+document.getElementById("chkPoly").addEventListener("change", function () {
+  if (this.checked) map.addLayer(polygonsLayer);
+  else map.removeLayer(polygonsLayer);
+});
+
+document.getElementById("chkPups").addEventListener("change", function () {
+  if (this.checked) map.addLayer(pointsLayer);
+  else map.removeLayer(pointsLayer);
+});
 
 
 // ======================= СТАРТ ============================
