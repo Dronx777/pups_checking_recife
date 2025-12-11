@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Карта + GPS + Полигоны + Точки</title>
+<title>Карта + GPS + Полигоны + Pup Points</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -49,49 +49,41 @@
 <div id="copyToast">Скопировано!</div>
 
 <script>
-// === Инициализация карты ===
-const defaultCenter = [-8.05, -34.9];  // Recife
-const map = L.map('map').setView(defaultCenter, 13);
-
+// === Карта ===
+const map = L.map('map').setView([-8.05, -34.9], 13);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ====== Слои ======
+// === Слои ===
 const polygonsLayer = L.layerGroup().addTo(map);
 const pointsLayer = L.layerGroup().addTo(map);
 
-// ====== GPS ======
+// === GPS ===
 let userMarker = null;
 let watchId = null;
 
 function updateUserPosition(position) {
   const lat = position.coords.latitude;
   const lon = position.coords.longitude;
-  const coords = [lat, lon];
 
   if (!userMarker) {
-    userMarker = L.marker(coords).addTo(map).bindPopup("Вы здесь");
+    userMarker = L.marker([lat, lon]).addTo(map).bindPopup("Вы здесь");
     userMarker.openPopup();
   } else {
-    userMarker.setLatLng(coords);
+    userMarker.setLatLng([lat, lon]);
   }
 
-  map.setView(coords, 17);
+  map.setView([lat, lon], 17);
 }
 
 document.getElementById("gpsBtn").addEventListener("click", () => {
-  if (!navigator.geolocation) {
-    alert("Геолокация не поддерживается.");
-    return;
-  }
-
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       updateUserPosition(pos);
 
-      if (watchId === null) {
+      if (!watchId) {
         watchId = navigator.geolocation.watchPosition(
           updateUserPosition,
-          (err) => console.warn("watchPosition error", err),
+          (err) => console.warn("watchPosition error:", err),
           { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
         );
       }
@@ -101,81 +93,56 @@ document.getElementById("gpsBtn").addEventListener("click", () => {
   );
 });
 
-// ====== Popup копирования ======
+// === Toast ===
 function showCopiedToast() {
   const toast = document.getElementById("copyToast");
   toast.style.display = "block";
   setTimeout(() => { toast.style.display = "none"; }, 1200);
 }
 
-// ====== Загрузка CSV с полигонами ======
-function loadPolygons() {
-  const url = "poly.csv";
-
-  fetch(url)
-    .then(res => res.text())
-    .then(csvText => {
-      Papa.parse(csvText, {
-        header: true,
-        dynamicTyping: false,
-        skipEmptyLines: true,
-        complete: (result) => {
-          const rows = result.data;
-
-          rows.forEach(r => {
-            if (!r.geom) return;
-            if (r.deleted_at && r.deleted_at.trim() !== "") return;
-
-            const geom = r.geom.trim();
-
-            if (geom.startsWith("POLYGON")) {
-              const coords = parseWKTPolygon(geom);
-
-              if (coords.length) {
-                const polygon = L.polygon(coords, {
-                  color: 'blue',
-                  weight: 2,
-                  fillColor: 'blue',
-                  fillOpacity: 0.2
-                }).addTo(polygonsLayer);
-
-                if (r.name) polygon.bindTooltip(r.name);
-
-                polygon.on("mouseover", function () {
-                  this.setStyle({ weight: 4, fillOpacity: 0.35 });
-                });
-                polygon.on("mouseout", function () {
-                  this.setStyle({ weight: 2, fillOpacity: 0.2 });
-                });
-
-                polygon.on("click", () => {
-                  const popupContent = `
-                    <div style="font-size:15px;min-width:180px;">
-                      <b>Название:</b><br>
-                      <input id="polyNameField" value="${r.name || ''}" readonly 
-                        style="width:100%;margin-top:4px;padding:6px;font-size:14px;">
-                      <button onclick="copyPolygonName()" 
-                        style="margin-top:8px;width:100%;padding:6px;border-radius:6px;border:1px solid #666;background:#eee;">
-                        Скопировать
-                      </button>
-                    </div>
-                  `;
-                  polygon.bindPopup(popupContent).openPopup();
-                });
-              }
-            }
-          });
-
-          if (polygonsLayer.getLayers().length > 0) {
-            map.fitBounds(polygonsLayer.getBounds());
-          }
-        }
-      });
-    })
-    .catch(err => console.error("Ошибка загрузки poly.csv:", err));
+// === Нормализация координат ===
+function normalizeCoord(v) {
+  if (!v) return null;
+  return parseFloat(
+    v.toString()
+      .replace(",", ".")
+      .replace(/[^\d\.\-]+/g, "")  // оставить только цифры . и -
+      .trim()
+  );
 }
 
-// ====== Парсер WKT POLYGON ======
+// === Загрузка точек ===
+function loadPoints() {
+  fetch("pups_m.csv")
+    .then(res => res.text())
+    .then(csv => {
+      Papa.parse(csv, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (data) => {
+
+          data.data.forEach(row => {
+            let lat = normalizeCoord(row.lat);
+            let lon = normalizeCoord(row.lon);
+
+            if (isNaN(lat) || isNaN(lon)) return;
+
+            L.marker([lat, lon], {
+              icon: L.icon({
+                iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+                shadowUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+                iconSize: [25, 41],
+                iconAnchor: [12, 41]
+              })
+            }).addTo(pointsLayer);
+          });
+
+        }
+      });
+    });
+}
+
+// === Парсер WKT Polygon ===
 function parseWKTPolygon(wkt) {
   const cleaned = wkt
     .replace("POLYGON", "")
@@ -200,7 +167,72 @@ function parseWKTPolygon(wkt) {
   return latlngs;
 }
 
-// ====== Копирование ======
+// === Загрузка полигонов ===
+function loadPolygons() {
+  fetch("poly.csv")
+    .then(res => res.text())
+    .then(csv => {
+      Papa.parse(csv, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (data) => {
+
+          data.data.forEach(row => {
+            if (!row.geom) return;
+
+            // исключаем deleted_at != null
+            if (row.deleted_at && row.deleted_at.trim() !== "") return;
+
+            const geom = row.geom.trim();
+            if (!geom.startsWith("POLYGON")) return;
+
+            const coords = parseWKTPolygon(geom);
+            if (!coords.length) return;
+
+            const polygon = L.polygon(coords, {
+              color: "blue",
+              weight: 2,
+              fillColor: "blue",
+              fillOpacity: 0.2
+            }).addTo(polygonsLayer);
+
+            // подпись
+            if (row.name) polygon.bindTooltip(row.name);
+
+            // подсветка
+            polygon.on("mouseover", function () {
+              this.setStyle({ weight: 4, fillOpacity: 0.35 });
+            });
+            polygon.on("mouseout", function () {
+              this.setStyle({ weight: 2, fillOpacity: 0.2 });
+            });
+
+            // popup
+            polygon.on("click", () => {
+              const popupContent = `
+                <div style="font-size:15px;min-width:180px;">
+                  <b>Название:</b><br>
+                  <input id="polyNameField" value="${row.name || ''}" readonly
+                    style="width:100%;margin-top:4px;padding:6px;font-size:14px;">
+                  <button onclick="copyPolygonName()"
+                    style="margin-top:8px;width:100%;padding:6px;border-radius:6px;border:1px solid #666;background:#eee;">
+                    Скопировать
+                  </button>
+                </div>
+              `;
+              polygon.bindPopup(popupContent).openPopup();
+            });
+          });
+
+          if (polygonsLayer.getLayers().length > 0) {
+            map.fitBounds(polygonsLayer.getBounds());
+          }
+
+        }
+      });
+    });
+}
+
 window.copyPolygonName = function () {
   const input = document.getElementById("polyNameField");
   if (!input) return;
@@ -208,52 +240,7 @@ window.copyPolygonName = function () {
   showCopiedToast();
 };
 
-// ====== Загрузка точек pups_m.csv ======
-function loadPoints() {
-  const url = "pups_m.csv";
-
-  fetch(url)
-    .then(res => res.text())
-    .then(csvText => {
-      Papa.parse(csvText, {
-        header: true,
-        dynamicTyping: false,
-        skipEmptyLines: true,
-        complete: (result) => {
-          const rows = result.data;
-
-          rows.forEach(r => {
-            if (!r.lat || !r.lon) return;
-
-            const lat = parseFloat(r.lat);
-            const lon = parseFloat(r.lon);
-            if (isNaN(lat) || isNaN(lon)) return;
-
-            const marker = L.circleMarker([lat, lon], {
-              radius: 6,
-              color: "red",
-              fillColor: "red",
-              fillOpacity: 0.9
-            }).addTo(pointsLayer);
-
-            let title = r.name || r.subname || "Точка";
-            marker.bindTooltip(title);
-
-            marker.bindPopup(`
-              <div style="font-size:14px">
-                <b>${title}</b><br>
-                lat: ${lat}<br>
-                lon: ${lon}
-              </div>
-            `);
-          });
-        }
-      });
-    })
-    .catch(err => console.error("Ошибка загрузки pups_m.csv:", err));
-}
-
-// ====== Старт ======
+// === Старт загрузки ===
 loadPolygons();
 loadPoints();
 
