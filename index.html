@@ -10,9 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <style>
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-  }
+  html, body { margin: 0; padding: 0; height: 100%; }
   #map { height: 100vh; width: 100vw; }
 
   #gpsBtn {
@@ -29,7 +27,6 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
 
-  /* Кнопка-прицел */
   #centerBtn {
     position: absolute;
     right: 15px;
@@ -51,7 +48,6 @@
     height: 22px;
     border: 2px solid black;
     border-radius: 50%;
-    position: relative;
   }
   #centerBtn::after {
     content: "";
@@ -74,6 +70,20 @@
     font-size: 14px;
     display: none;
     z-index: 2000;
+  }
+
+  /* Лейблы subname */
+  .sub-label {
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+    text-shadow:
+      -1px -1px 0 black,
+       1px -1px 0 black,
+      -1px  1px 0 black,
+       1px  1px 0 black;
+    white-space: nowrap;
+    transform: translate(-50%, -10px);
   }
 </style>
 </head>
@@ -134,15 +144,15 @@ document.getElementById("gpsBtn").addEventListener("click", () => {
   );
 });
 
-// ====== Центрирование по кнопке-прицелу ======
+// ====== Центрирование ======
 document.getElementById("centerBtn").addEventListener("click", () => {
   if (!userMarker) return;
   const p = userMarker.getLatLng();
-  followEnabled = true; // при нажатии снова включается follow
+  followEnabled = true;
   map.setView(p, map.getZoom());
 });
 
-// ====== Если пользователь двигает карту — follow выключается ======
+// ====== Выключение follow при движении карты ======
 map.on("dragstart", () => followEnabled = false);
 map.on("zoomstart", () => followEnabled = false);
 
@@ -158,9 +168,7 @@ function showCopiedToast() {
 // ======================= ЗАГРУЗКА ТОЧЕК pups_m.csv ============================
 function normalizeCoord(v) {
   if (!v) return null;
-  return parseFloat(
-    v.toString().replace(",", ".").replace(/[^\d\.\-]+/g, "").trim()
-  );
+  return parseFloat(v.toString().replace(",", ".").replace(/[^\d\.\-]+/g, "").trim());
 }
 
 function loadPoints() {
@@ -171,12 +179,13 @@ function loadPoints() {
         header: true,
         skipEmptyLines: true,
         complete: (data) => {
+
           data.data.forEach(row => {
             let lat = normalizeCoord(row.lat);
             let lon = normalizeCoord(row.lon);
             if (isNaN(lat) || isNaN(lon)) return;
 
-            L.marker([lat, lon], {
+            const marker = L.marker([lat, lon], {
               icon: L.icon({
                 iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
                 shadowUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
@@ -184,7 +193,22 @@ function loadPoints() {
                 iconAnchor: [12, 41]
               })
             }).addTo(pointsLayer);
+
+            // ====== ЛЕЙБЛ SUBNAME ======
+            if (row.subname && row.subname.trim() !== "") {
+              const label = L.marker([lat, lon], {
+                icon: L.divIcon({
+                  className: "",
+                  html: `<div class="sub-label">${row.subname}</div>`,
+                  iconSize: [0, 0],
+                  iconAnchor: [0, 0]
+                }),
+                interactive: false
+              });
+              pointsLayer.addLayer(label);
+            }
           });
+
         }
       });
     });
@@ -193,11 +217,7 @@ function loadPoints() {
 
 // ======================= ПОЛИГОНЫ ============================
 function parseWKTPolygon(wkt) {
-  const cleaned = wkt.replace("POLYGON", "")
-                     .replace(/\(/g, "")
-                     .replace(/\)/g, "")
-                     .trim();
-
+  const cleaned = wkt.replace("POLYGON", "").replace(/\(/g, "").replace(/\)/g, "").trim();
   return cleaned.split(",").map(p => {
     const [lon, lat] = p.trim().split(" ").map(Number);
     return [lat, lon];
@@ -212,6 +232,7 @@ function loadPolygons() {
         header: true,
         skipEmptyLines: true,
         complete: (data) => {
+
           data.data.forEach(row => {
             if (!row.geom) return;
             if (row.deleted_at && row.deleted_at.trim() !== "") return;
@@ -222,8 +243,10 @@ function loadPolygons() {
             const coords = parseWKTPolygon(geom);
 
             const polygon = L.polygon(coords, {
-              color: "blue", weight: 2,
-              fillColor: "blue", fillOpacity: 0.2
+              color: "blue",
+              weight: 2,
+              fillColor: "blue",
+              fillOpacity: 0.2
             }).addTo(polygonsLayer);
 
             if (row.name) polygon.bindTooltip(row.name);
