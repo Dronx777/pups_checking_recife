@@ -247,8 +247,13 @@ csvInput.onchange=e=>{
     header:true,
     complete:(res)=>{
       pointsData=res.data;
-      pointsData.forEach(p=>{
-        if(p.deleted_at) return;
+      pointsData.forEach(p => {
+
+  if (
+    p.deleted_at !== undefined &&
+    p.deleted_at !== null &&
+    String(p.deleted_at).trim() !== ""
+  ) return;
         const lat=parseFloat(p.lat), lon=parseFloat(p.lon);
         if(isNaN(lat)||isNaN(lon)) return;
 
