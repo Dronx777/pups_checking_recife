@@ -13,24 +13,83 @@
 html, body { margin:0; padding:0; height:100%; }
 #map { height:100vh; width:100vw; }
 
-#topPanel {
+/* ===== КНОПКИ СВЕРХУ ===== */
+#topPanel{
   position:absolute;
   top:10px;
   left:50%;
   transform:translateX(-50%);
-  z-index:1500;
+  z-index:1600;
   display:flex;
   gap:8px;
 }
-#topPanel button {
+#topPanel button{
   padding:8px 12px;
-  font-size:14px;
   background:white;
   border:1px solid #ccc;
   border-radius:6px;
   cursor:pointer;
 }
 
+/* ===== GPS ===== */
+#gpsBtn{
+  position:absolute;
+  top:60px;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:1500;
+  padding:10px 15px;
+  background:white;
+  border-radius:8px;
+  border:1px solid #ccc;
+}
+
+#centerBtn{
+  position:absolute;
+  right:15px;
+  top:80px;
+  width:50px;
+  height:50px;
+  z-index:1500;
+  border-radius:50%;
+  background:white;
+  border:1px solid #ccc;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+#centerBtn::before{
+  content:"";
+  width:22px;height:22px;
+  border:2px solid black;
+  border-radius:50%;
+}
+#centerBtn::after{
+  content:"";
+  width:3px;height:3px;
+  background:black;
+  border-radius:50%;
+  position:absolute;
+}
+
+/* ===== СЛОИ ===== */
+#layersPanel{
+  position:absolute;
+  left:10px;
+  top:10px;
+  padding:10px 15px;
+  background:white;
+  border-radius:8px;
+  border:1px solid #ccc;
+  z-index:1600;
+}
+#layersPanel label{
+  display:flex;
+  gap:6px;
+  margin-bottom:6px;
+}
+
+/* ===== POPUP ===== */
 .popup-input{width:100%;padding:6px;margin-bottom:6px}
 .popup-readonly{width:100%;padding:6px;margin-bottom:6px;background:#eee}
 .popup-btn{width:100%;padding:6px;margin-bottom:4px;cursor:pointer}
@@ -45,34 +104,109 @@ html, body { margin:0; padding:0; height:100%; }
 
 <body>
 
+<div id="layersPanel">
+  <label><input type="checkbox" id="chkPoly" checked> Полигоны</label>
+  <label><input type="checkbox" id="chkPups" checked> Pup Points</label>
+</div>
+
 <div id="topPanel">
   <button id="openCsvBtn">Открыть CSV</button>
   <button id="saveCsvBtn">Сохранить CSV</button>
-  <input type="file" id="csvFileInput" accept=".csv" style="display:none">
+  <input type="file" id="csvInput" accept=".csv" style="display:none">
 </div>
+
+<button id="gpsBtn">GPS</button>
+<button id="centerBtn" style="display:none"></button>
 
 <div id="map"></div>
 
 <script>
-const map = L.map('map').setView([-8.05, -34.9], 13);
+// ======================= MAP =======================
+const map = L.map('map').setView([-8.05,-34.9],13);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-const pointsLayer = L.layerGroup().addTo(map);
+const polygonsLayer = L.layerGroup().addTo(map);
+const pointsLayer   = L.layerGroup().addTo(map);
 
-let pointsData = [];   // ВСЕ строки CSV
-let markers = [];      // маркеры на карте
+// ======================= GPS =======================
+let userMarker=null, watchId=null, follow=true;
 
-function normalizeCoord(v){
-  if(!v) return null;
-  return parseFloat(v.toString().replace(",",".").replace(/[^\d.-]/g,""));
+function updateUser(pos){
+  const lat=pos.coords.latitude, lon=pos.coords.longitude;
+  if(!userMarker){
+    userMarker=L.marker([lat,lon]).addTo(map);
+    document.getElementById("centerBtn").style.display="flex";
+  } else userMarker.setLatLng([lat,lon]);
+  if(follow) map.setView([lat,lon]);
 }
 
-// ===================== POPUP =====================
-function createPopup(point, marker){
-  const c=document.createElement("div");
-  c.style.minWidth="220px";
+gpsBtn.onclick=()=>{
+  navigator.geolocation.getCurrentPosition(
+    p=>{
+      follow=true;
+      updateUser(p);
+      if(!watchId){
+        watchId=navigator.geolocation.watchPosition(updateUser,()=>{},{
+          enableHighAccuracy:true
+        });
+      }
+    },
+    ()=>alert("Разрешите доступ к геолокации")
+  );
+};
 
-  c.innerHTML=`
+centerBtn.onclick=()=>{
+  if(userMarker){
+    follow=true;
+    map.setView(userMarker.getLatLng(),map.getZoom());
+  }
+};
+
+map.on("dragstart",()=>follow=false);
+map.on("zoomstart",()=>follow=false);
+
+// ======================= POLYGONS =======================
+function parseWKTPolygon(wkt){
+  return wkt.replace("POLYGON","")
+    .replace(/[()]/g,"")
+    .split(",")
+    .map(p=>{
+      const [lon,lat]=p.trim().split(" ").map(Number);
+      return [lat,lon];
+    });
+}
+
+fetch("poly.csv")
+.then(r=>r.text())
+.then(csv=>{
+  Papa.parse(csv,{
+    header:true,
+    complete:(res)=>{
+      res.data.forEach(row=>{
+        if(row.deleted_at||!row.geom) return;
+        const poly=L.polygon(parseWKTPolygon(row.geom),{
+          color:"blue",fillOpacity:0.2
+        }).addTo(polygonsLayer);
+        if(row.name) poly.bindTooltip(row.name);
+      });
+    }
+  });
+});
+
+// ======================= ICONS =======================
+const icon=(c)=>L.icon({
+  iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${c}.png`,
+  shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+  iconSize:[25,41],iconAnchor:[12,41]
+});
+const redIcon=icon("red"), greenIcon=icon("green"), orangeIcon=icon("orange");
+
+// ======================= POINTS =======================
+let pointsData=[];
+
+function popup(point,marker){
+  const d=document.createElement("div");
+  d.innerHTML=`
     name:<input class="popup-readonly" readonly value="${point.name||""}">
     изменение name:<input class="popup-input" id="nch" value="${point.name_ch||""}">
     subname:<input class="popup-readonly" readonly value="${point.subname||""}">
@@ -81,78 +215,52 @@ function createPopup(point, marker){
     <button class="popup-btn" id="need">Нужны изменения</button>
     <button class="popup-btn" id="clear">Очистить</button>
   `;
+  const nch=d.querySelector("#nch"), sch=d.querySelector("#sch");
 
-  const nch=c.querySelector("#nch");
-  const sch=c.querySelector("#sch");
-
-  c.querySelector("#ok").onclick=()=>{
+  d.querySelector("#ok").onclick=()=>{
     if(nch.value||sch.value){alert("есть изменения");return;}
     point.status="1"; point.name_ch=""; point.subname_ch="";
-    marker.setIcon(greenIcon);
-    marker.closePopup();
+    marker.setIcon(greenIcon); marker.closePopup();
   };
-
-  c.querySelector("#need").onclick=()=>{
+  d.querySelector("#need").onclick=()=>{
     if(!nch.value||!sch.value){alert("нет изменений");return;}
-    point.status="2";
-    point.name_ch=nch.value;
-    point.subname_ch=sch.value;
-    marker.setIcon(orangeIcon);
-    marker.closePopup();
+    point.status="2"; point.name_ch=nch.value; point.subname_ch=sch.value;
+    marker.setIcon(orangeIcon); marker.closePopup();
   };
-
-  c.querySelector("#clear").onclick=()=>{
-    point.status="0";
-    point.name_ch=""; point.subname_ch="";
+  d.querySelector("#clear").onclick=()=>{
+    point.status="0"; point.name_ch=""; point.subname_ch="";
     nch.value=""; sch.value="";
     marker.setIcon(redIcon);
   };
-
-  return c;
+  return d;
 }
 
-// ===================== ICONS =====================
-const redIcon = L.icon({iconUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
-shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",iconSize:[25,41],iconAnchor:[12,41]});
+// ======================= LOAD CSV =======================
+openCsvBtn.onclick=()=>csvInput.click();
 
-const greenIcon = L.icon({iconUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
-shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",iconSize:[25,41],iconAnchor:[12,41]});
-
-const orangeIcon = L.icon({iconUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-orange.png",
-shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",iconSize:[25,41],iconAnchor:[12,41]});
-
-// ===================== LOAD CSV =====================
-document.getElementById("openCsvBtn").onclick=()=>{
-  document.getElementById("csvFileInput").click();
-};
-
-document.getElementById("csvFileInput").addEventListener("change", e=>{
+csvInput.onchange=e=>{
   const file=e.target.files[0];
   if(!file) return;
 
+  pointsLayer.clearLayers();
   Papa.parse(file,{
     header:true,
-    skipEmptyLines:true,
     complete:(res)=>{
       pointsData=res.data;
-      pointsLayer.clearLayers();
-      markers=[];
-
       pointsData.forEach(p=>{
         if(p.deleted_at) return;
-
-        const lat=normalizeCoord(p.lat);
-        const lon=normalizeCoord(p.lon);
+        const lat=parseFloat(p.lat), lon=parseFloat(p.lon);
         if(isNaN(lat)||isNaN(lon)) return;
 
-        const icon = p.status==="1"?greenIcon:p.status==="2"?orangeIcon:redIcon;
-        const m=L.marker([lat,lon],{icon}).addTo(pointsLayer);
-        m.bindPopup(createPopup(p,m));
-        markers.push(m);
+        const m=L.marker([lat,lon],{
+          icon:p.status==="1"?greenIcon:p.status==="2"?orangeIcon:redIcon
+        }).addTo(pointsLayer);
+
+        m.bindPopup(popup(p,m));
 
         if(p.subname){
           L.marker([lat,lon],{
-            icon:L.divIcon({html:`<div class="sub-label">${p.subname}</div>`,iconSize:[0,0]}),
+            icon:L.divIcon({html:`<div class="sub-label">${p.subname}</div>`}),
             interactive:false
           }).addTo(pointsLayer);
         }
@@ -160,17 +268,21 @@ document.getElementById("csvFileInput").addEventListener("change", e=>{
       map.fitBounds(pointsLayer.getBounds());
     }
   });
-});
+};
 
-// ===================== SAVE CSV =====================
-document.getElementById("saveCsvBtn").onclick=()=>{
-  const csv = Papa.unparse(pointsData);
-  const blob = new Blob([csv],{type:"text/csv;charset=utf-8;"});
+// ======================= SAVE CSV =======================
+saveCsvBtn.onclick=()=>{
+  const csv=Papa.unparse(pointsData);
+  const blob=new Blob([csv],{type:"text/csv"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download="pups_m_updated.csv";
   a.click();
 };
+
+// ======================= LAYERS =======================
+chkPoly.onchange=()=>chkPoly.checked?map.addLayer(polygonsLayer):map.removeLayer(polygonsLayer);
+chkPups.onchange=()=>chkPups.checked?map.addLayer(pointsLayer):map.removeLayer(pointsLayer);
 </script>
 </body>
 </html>
