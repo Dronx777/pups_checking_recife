@@ -112,18 +112,72 @@ gpsBtn.onclick=()=>{
 map.on("dragstart zoomstart",()=>follow=false);
 
 // ---------- POLYGONS ----------
-fetch("poly.csv").then(r=>r.text()).then(csv=>{
- Papa.parse(csv,{header:true,complete:res=>{
-  res.data.forEach(r=>{
-    if(!r.geom||r.deleted_at?.trim()) return;
-    const pts=r.geom.replace(/POLYGON|\(|\)/g,"").split(",")
-      .map(p=>{const[a,b]=p.trim().split(" ");return[b,a]});
-    L.polygon(pts,{color:"blue",fillOpacity:.2})
-     .bindTooltip(r.name||"")
-     .addTo(polygonsLayer);
+fetch("poly.csv")
+  .then(r => r.text())
+  .then(csv => {
+    Papa.parse(csv, {
+      header: true,
+      skipEmptyLines: true,
+      complete: res => {
+        res.data.forEach(row => {
+          if (!row.geom) return;
+          if (row.deleted_at && row.deleted_at.trim() !== "") return;
+
+          if (!row.geom.startsWith("POLYGON")) return;
+
+          const coords = row.geom
+            .replace("POLYGON", "")
+            .replace(/\(|\)/g, "")
+            .trim()
+            .split(",")
+            .map(p => {
+              const [lon, lat] = p.trim().split(" ").map(Number);
+              return [lat, lon];
+            });
+
+          const polygon = L.polygon(coords, {
+            color: "blue",
+            weight: 2,
+            fillColor: "blue",
+            fillOpacity: 0.2
+          }).addTo(polygonsLayer);
+
+          if (row.name) polygon.bindTooltip(row.name);
+
+          polygon.on("mouseover", () =>
+            polygon.setStyle({ weight: 4, fillOpacity: 0.35 })
+          );
+          polygon.on("mouseout", () =>
+            polygon.setStyle({ weight: 2, fillOpacity: 0.2 })
+          );
+
+          // ✅ ВОЗВРАЩЁННЫЙ POPUP
+          polygon.on("click", () => {
+            polygon.bindPopup(`
+              <div style="font-size:14px;min-width:200px;">
+                <b>Название:</b><br>
+                <input
+                  id="polyNameField"
+                  value="${row.name || ""}"
+                  readonly
+                  style="width:100%;margin-top:4px;padding:6px;"
+                >
+                <button
+                  onclick="navigator.clipboard.writeText(document.getElementById('polyNameField').value)"
+                  style="margin-top:8px;width:100%;padding:6px;"
+                >
+                  Скопировать
+                </button>
+              </div>
+            `).openPopup();
+          });
+        });
+
+        if (polygonsLayer.getLayers().length)
+          map.fitBounds(polygonsLayer.getBounds());
+      }
+    });
   });
- }});
-});
 
 // ---------- ICONS ----------
 const icons={
