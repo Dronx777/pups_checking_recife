@@ -3,265 +3,215 @@
 <head>
 <meta charset="utf-8" />
 <title>Карта + GPS + Полигоны + Pup Points</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <style>
-html, body { margin:0; padding:0; height:100%; }
-#map { height:100vh; width:100vw; }
+html,body{margin:0;padding:0;height:100%}
+#map{height:100vh;width:100vw}
 
-/* ===== КНОПКИ СВЕРХУ ===== */
+/* ===== TOP PANEL ===== */
 #topPanel{
   position:absolute;
   top:10px;
   left:50%;
   transform:translateX(-50%);
-  z-index:1600;
+  z-index:1500;
+  background:white;
+  padding:8px;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,.3);
   display:flex;
-  gap:8px;
+  flex-direction:column;
+  gap:6px;
+  width:90%;
+  max-width:360px;
 }
+
+.top-row{
+  display:flex;
+  gap:6px;
+}
+
 #topPanel button{
-  padding:8px 12px;
-  background:white;
-  border:1px solid #ccc;
+  flex:1;
+  padding:8px;
+  font-size:14px;
   border-radius:6px;
-  cursor:pointer;
-}
-
-/* ===== GPS ===== */
-#gpsBtn{
-  position:absolute;
-  top:60px;
-  left:50%;
-  transform:translateX(-50%);
-  z-index:1500;
-  padding:10px 15px;
-  background:white;
-  border-radius:8px;
   border:1px solid #ccc;
+  background:#fff;
 }
 
-#centerBtn{
-  position:absolute;
-  right:15px;
-  top:80px;
-  width:50px;
-  height:50px;
-  z-index:1500;
-  border-radius:50%;
-  background:white;
-  border:1px solid #ccc;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-#centerBtn::before{
-  content:"";
-  width:22px;height:22px;
-  border:2px solid black;
-  border-radius:50%;
-}
-#centerBtn::after{
-  content:"";
-  width:3px;height:3px;
-  background:black;
-  border-radius:50%;
-  position:absolute;
-}
-
-/* ===== СЛОИ ===== */
+/* ===== LAYERS ===== */
 #layersPanel{
   position:absolute;
   left:10px;
-  top:10px;
-  padding:10px 15px;
+  bottom:10px;
+  z-index:1500;
   background:white;
+  padding:8px 12px;
   border-radius:8px;
-  border:1px solid #ccc;
-  z-index:1600;
+  box-shadow:0 2px 6px rgba(0,0,0,.3);
+  font-size:14px;
 }
-#layersPanel label{
-  display:flex;
-  gap:6px;
-  margin-bottom:6px;
-}
+#layersPanel label{display:flex;gap:6px;align-items:center}
 
 /* ===== POPUP ===== */
 .popup-input{width:100%;padding:6px;margin-bottom:6px}
 .popup-readonly{width:100%;padding:6px;margin-bottom:6px;background:#eee}
-.popup-btn{width:100%;padding:6px;margin-bottom:4px;cursor:pointer}
+.popup-btn{width:100%;padding:6px;margin-bottom:4px}
 
 .sub-label{
   font-size:14px;font-weight:bold;color:white;
   text-shadow:-1px -1px 0 black,1px -1px 0 black,-1px 1px 0 black,1px 1px 0 black;
-  white-space:nowrap;transform:translate(-50%,-10px)
+  white-space:nowrap;
+  transform:translate(-50%,-10px);
 }
 </style>
 </head>
 
 <body>
 
+<div id="topPanel">
+  <div class="top-row">
+    <button id="gpsBtn">GPS</button>
+    <button id="centerBtn" style="display:none">◎</button>
+  </div>
+  <div class="top-row">
+    <button id="openCsvBtn">Открыть CSV</button>
+    <button id="saveCsvBtn">Сохранить CSV</button>
+  </div>
+  <input type="file" id="csvFileInput" accept=".csv" style="display:none">
+</div>
+
 <div id="layersPanel">
   <label><input type="checkbox" id="chkPoly" checked> Полигоны</label>
-  <label><input type="checkbox" id="chkPups" checked> Pup Points</label>
+  <label><input type="checkbox" id="chkPups" checked> Точки</label>
 </div>
-
-<div id="topPanel">
-  <button id="openCsvBtn">Открыть CSV</button>
-  <button id="saveCsvBtn">Сохранить CSV</button>
-  <input type="file" id="csvInput" accept=".csv" style="display:none">
-</div>
-
-<button id="gpsBtn">GPS</button>
-<button id="centerBtn" style="display:none"></button>
 
 <div id="map"></div>
 
 <script>
-// ======================= MAP =======================
-const map = L.map('map').setView([-8.05,-34.9],13);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+// ================= MAP =================
+const map=L.map("map").setView([-8.05,-34.9],13);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
-const polygonsLayer = L.layerGroup().addTo(map);
-const pointsLayer   = L.layerGroup().addTo(map);
+const polygonsLayer=L.layerGroup().addTo(map);
+const pointsLayer=L.layerGroup().addTo(map);
 
-// ======================= GPS =======================
-let userMarker=null, watchId=null, follow=true;
+// ================= GPS =================
+let userMarker=null,watchId=null,follow=false;
 
 function updateUser(pos){
-  const lat=pos.coords.latitude, lon=pos.coords.longitude;
+  const lat=pos.coords.latitude,lon=pos.coords.longitude;
   if(!userMarker){
     userMarker=L.marker([lat,lon]).addTo(map);
-    document.getElementById("centerBtn").style.display="flex";
-  } else userMarker.setLatLng([lat,lon]);
+    centerBtn.style.display="block";
+  }else userMarker.setLatLng([lat,lon]);
   if(follow) map.setView([lat,lon]);
 }
 
 gpsBtn.onclick=()=>{
-  navigator.geolocation.getCurrentPosition(
-    p=>{
-      follow=true;
-      updateUser(p);
-      if(!watchId){
-        watchId=navigator.geolocation.watchPosition(updateUser,()=>{},{
-          enableHighAccuracy:true
-        });
-      }
-    },
-    ()=>alert("Разрешите доступ к геолокации")
-  );
+  navigator.geolocation.getCurrentPosition(p=>{
+    follow=true;updateUser(p);
+    if(!watchId) watchId=navigator.geolocation.watchPosition(updateUser);
+  },()=>alert("Нет доступа к GPS"));
 };
 
-centerBtn.onclick=()=>{
-  if(userMarker){
-    follow=true;
-    map.setView(userMarker.getLatLng(),map.getZoom());
-  }
-};
-
+centerBtn.onclick=()=>{ if(userMarker){follow=true;map.setView(userMarker.getLatLng())}};
 map.on("dragstart",()=>follow=false);
-map.on("zoomstart",()=>follow=false);
 
-// ======================= POLYGONS =======================
-function parseWKTPolygon(wkt){
-  return wkt.replace("POLYGON","")
-    .replace(/[()]/g,"")
-    .split(",")
-    .map(p=>{
-      const [lon,lat]=p.trim().split(" ").map(Number);
-      return [lat,lon];
-    });
+// ================= POLYGONS =================
+function parseWKT(w){
+  return w.replace("POLYGON","").replace(/[()]/g,"").split(",").map(p=>{
+    const [lon,lat]=p.trim().split(" ").map(Number);
+    return [lat,lon];
+  });
 }
 
-fetch("poly.csv")
-.then(r=>r.text())
-.then(csv=>{
-  Papa.parse(csv,{
-    header:true,
-    complete:(res)=>{
-      res.data.forEach(row=>{
-        if(row.deleted_at||!row.geom) return;
-        const poly=L.polygon(parseWKTPolygon(row.geom),{
-          color:"blue",fillOpacity:0.2
-        }).addTo(polygonsLayer);
-        if(row.name) poly.bindTooltip(row.name);
-      });
-    }
+fetch("poly.csv").then(r=>r.text()).then(csv=>{
+  Papa.parse(csv,{header:true,skipEmptyLines:true,complete:r=>{
+    r.data.forEach(row=>{
+      if(row.deleted_at && row.deleted_at.trim()!=="") return;
+      if(!row.geom) return;
+      const poly=L.polygon(parseWKT(row.geom),{
+        color:"blue",weight:2,fillOpacity:.2
+      }).addTo(polygonsLayer);
+      if(row.name) poly.bindTooltip(row.name);
+    });
+  }});
+});
+
+// ================= ICONS =================
+const icons={
+  0:"red",1:"green",2:"orange"
+};
+function icon(color){
+  return L.icon({
+    iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
+    shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+    iconSize:[25,41],iconAnchor:[12,41]
   });
-});
+}
 
-// ======================= ICONS =======================
-const icon=(c)=>L.icon({
-  iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${c}.png`,
-  shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
-  iconSize:[25,41],iconAnchor:[12,41]
-});
-const redIcon=icon("red"), greenIcon=icon("green"), orangeIcon=icon("orange");
-
-// ======================= POINTS =======================
+// ================= POINTS =================
 let pointsData=[];
 
-function popup(point,marker){
+function norm(v){
+  return parseFloat(String(v).replace(",",".").replace(/[^\d.-]/g,""));
+}
+
+function popup(p,m){
   const d=document.createElement("div");
   d.innerHTML=`
-    name:<input class="popup-readonly" readonly value="${point.name||""}">
-    изменение name:<input class="popup-input" id="nch" value="${point.name_ch||""}">
-    subname:<input class="popup-readonly" readonly value="${point.subname||""}">
-    изменение subname:<input class="popup-input" id="sch" value="${point.subname_ch||""}">
+    name:<input class="popup-readonly" readonly value="${p.name||""}">
+    изменение name:<input class="popup-input" id="nch" value="${p.name_ch||""}">
+    subname:<input class="popup-readonly" readonly value="${p.subname||""}">
+    изменение subname:<input class="popup-input" id="sch" value="${p.subname_ch||""}">
     <button class="popup-btn" id="ok">Все хорошо</button>
     <button class="popup-btn" id="need">Нужны изменения</button>
     <button class="popup-btn" id="clear">Очистить</button>
   `;
-  const nch=d.querySelector("#nch"), sch=d.querySelector("#sch");
+  const nch=d.querySelector("#nch"),sch=d.querySelector("#sch");
 
   d.querySelector("#ok").onclick=()=>{
     if(nch.value||sch.value){alert("есть изменения");return;}
-    point.status="1"; point.name_ch=""; point.subname_ch="";
-    marker.setIcon(greenIcon); marker.closePopup();
+    p.status="1";p.name_ch="";p.subname_ch="";
+    m.setIcon(icon("green"));m.closePopup();
   };
   d.querySelector("#need").onclick=()=>{
     if(!nch.value||!sch.value){alert("нет изменений");return;}
-    point.status="2"; point.name_ch=nch.value; point.subname_ch=sch.value;
-    marker.setIcon(orangeIcon); marker.closePopup();
+    p.status="2";p.name_ch=nch.value;p.subname_ch=sch.value;
+    m.setIcon(icon("orange"));m.closePopup();
   };
   d.querySelector("#clear").onclick=()=>{
-    point.status="0"; point.name_ch=""; point.subname_ch="";
-    nch.value=""; sch.value="";
-    marker.setIcon(redIcon);
+    p.status="0";p.name_ch="";p.subname_ch="";
+    nch.value="";sch.value="";
+    m.setIcon(icon("red"));
   };
   return d;
 }
 
-// ======================= LOAD CSV =======================
-openCsvBtn.onclick=()=>csvInput.click();
+// LOAD CSV
+openCsvBtn.onclick=()=>csvFileInput.click();
+csvFileInput.onchange=e=>{
+  Papa.parse(e.target.files[0],{
+    header:true,skipEmptyLines:true,complete:r=>{
+      pointsLayer.clearLayers();
+      pointsData=r.data;
 
-csvInput.onchange=e=>{
-  const file=e.target.files[0];
-  if(!file) return;
+      pointsData.forEach(p=>{
+        if(p.deleted_at && String(p.deleted_at).trim()!=="") return;
 
-  pointsLayer.clearLayers();
-  Papa.parse(file,{
-    header:true,
-    complete:(res)=>{
-      pointsData=res.data;
-      pointsData.forEach(p => {
-
-  if (
-    p.deleted_at !== undefined &&
-    p.deleted_at !== null &&
-    String(p.deleted_at).trim() !== ""
-  ) return;
-        const lat=parseFloat(p.lat), lon=parseFloat(p.lon);
+        const lat=norm(p.lat),lon=norm(p.lon);
         if(isNaN(lat)||isNaN(lon)) return;
 
-        const m=L.marker([lat,lon],{
-          icon:p.status==="1"?greenIcon:p.status==="2"?orangeIcon:redIcon
-        }).addTo(pointsLayer);
-
-        m.bindPopup(popup(p,m));
+        const m=L.marker([lat,lon],{icon:icon(icons[p.status||0])})
+          .addTo(pointsLayer)
+          .bindPopup(popup(p,m));
 
         if(p.subname){
           L.marker([lat,lon],{
@@ -270,22 +220,20 @@ csvInput.onchange=e=>{
           }).addTo(pointsLayer);
         }
       });
-      map.fitBounds(pointsLayer.getBounds());
     }
   });
 };
 
-// ======================= SAVE CSV =======================
+// SAVE CSV
 saveCsvBtn.onclick=()=>{
   const csv=Papa.unparse(pointsData);
-  const blob=new Blob([csv],{type:"text/csv"});
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
   a.download="pups_m_updated.csv";
   a.click();
 };
 
-// ======================= LAYERS =======================
+// ================= LAYERS =================
 chkPoly.onchange=()=>chkPoly.checked?map.addLayer(polygonsLayer):map.removeLayer(polygonsLayer);
 chkPups.onchange=()=>chkPups.checked?map.addLayer(pointsLayer):map.removeLayer(pointsLayer);
 </script>
